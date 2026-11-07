@@ -25,7 +25,7 @@ export default function ImageTools({tool}:{tool:Tool}) {
 
   const [files,setFiles]=useState<File[]>([]),[outputs,setOutputs]=useState<OutputFile[]>([]),[preview,setPreview]=useState<Blob>(),[original,setOriginal]=useState({width:0,height:0});
   const [quality,setQuality]=useState(85),[format,setFormat]=useState(searchParams.get('format')||'jpg');
-  const [targetOn,setTargetOn]=useState(paramTarget > 0 || slug!=='image-compressor');
+  const [targetOn,setTargetOn]=useState(paramTarget > 0 || (slug!=='image-compressor'&&slug!=='image-dimensions-size'));
   const [target,setTarget]=useState(paramTarget > 0 ? paramTarget : 100);
   const [sizeUnit,setSizeUnit]=useState(paramUnit);
   const [width,setWidth]=useState(paramWidth > 0 ? paramWidth : 1200);

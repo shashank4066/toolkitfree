@@ -1,4 +1,4 @@
-import { ArrowRight, ArrowUpRight, Check, ShieldCheck, Zap, Heart, MousePointer2, Upload, SlidersHorizontal, Download, Smartphone } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, Check, ShieldCheck, Zap, Heart, MousePointer2, Upload, SlidersHorizontal, Download, Smartphone, Wrench } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { categories, commonFaq, popularSlugs, tools } from '../config/tools';
 import { SearchBar } from '../components/SearchBar';
@@ -160,13 +160,13 @@ export default function Home() {
 
         <section className="container">
           <div className="bottom-cta">
-            <span className="cta-icon">⚒</span>
+            <span className="cta-icon"><Wrench size={22} /></span>
             <div>
-              <h2>A little help goes a long way.</h2>
-              <p>Your next task just got easier.</p>
+              <h2>Everything you need for everyday digital tasks.</h2>
+              <p>Free forever, zero signup, and completely private.</p>
             </div>
             <Button asChild size="lg">
-              <Link to="/all-tools">Find your tool<ArrowRight size={16} /></Link>
+              <Link to="/all-tools">Explore all {tools.length} tools<ArrowRight size={16} /></Link>
             </Button>
           </div>
         </section>

@@ -1,0 +1,12 @@
+import { useRef, useState } from 'react';
+import { UploadZone } from '../../components/UploadZone';
+import { CopyButton } from '../../components/ResultCard';
+import { imageAccept, prepareImage } from '../../lib/image';
+import { NumberField } from '../../components/Fields';
+import { Button } from '../../components/ui/button';
+export default function ColorPicker(){
+  const ref=useRef<HTMLCanvasElement>(null),[ready,setReady]=useState(false),[color,setColor]=useState('#4f46e5'),[error,setError]=useState(''),[x,setX]=useState(0),[y,setY]=useState(0);
+  async function load(files:File[]){try{setError('');const bitmap=await createImageBitmap(await prepareImage(files[0])),canvas=ref.current!;const scale=Math.min(1,2000/Math.max(bitmap.width,bitmap.height));canvas.width=Math.round(bitmap.width*scale);canvas.height=Math.round(bitmap.height*scale);canvas.getContext('2d',{willReadFrequently:true})!.drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();setReady(true);}catch{setError('This image could not be opened. Try JPG, PNG or WebP.');}}
+  function pick(px:number,py:number){const canvas=ref.current!;const cx=Math.max(0,Math.min(canvas.width-1,Math.round(px))),cy=Math.max(0,Math.min(canvas.height-1,Math.round(py))),[r,g,b]=canvas.getContext('2d')!.getImageData(cx,cy,1,1).data;setColor('#'+[r,g,b].map(n=>n.toString(16).padStart(2,'0')).join(''));setX(cx);setY(cy);}
+  return <><UploadZone accept={imageAccept} label="Image files" onFiles={load}/>{error&&<p className="error-message" role="alert">{error}</p>}<div className="utility-layout" style={{marginTop:20}}><div><canvas ref={ref} style={{display:ready?'block':'none',width:'100%',height:'auto',cursor:'crosshair',borderRadius:8}} aria-label="Click image to pick a color" onClick={e=>{const rect=e.currentTarget.getBoundingClientRect();pick((e.clientX-rect.left)*e.currentTarget.width/rect.width,(e.clientY-rect.top)*e.currentTarget.height/rect.height);}}/>{ready&&<><p className="help-text">Click a pixel or enter coordinates below. Large images are scaled to a 2,000-pixel preview.</p><div className="field-row"><NumberField label="X coordinate" min={0} value={x} onChange={e=>setX(Number(e.target.value))}/><NumberField label="Y coordinate" min={0} value={y} onChange={e=>setY(Number(e.target.value))}/></div><Button variant="secondary" onClick={()=>pick(x,y)}>Pick at coordinates</Button></>}</div><div className="utility-result"><div className="color-swatch" style={{background:color}}/><strong>{color.toUpperCase()}</strong><CopyButton text={color}/></div></div></>;
+}

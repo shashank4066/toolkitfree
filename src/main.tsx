@@ -1,0 +1,12 @@
+import { createRoot } from 'react-dom/client';
+import { BrowserRouter } from 'react-router-dom';
+import { App } from './App';
+import { site } from './config/site';
+import './styles.css';
+createRoot(document.getElementById('root')!).render(<BrowserRouter><App/></BrowserRouter>);
+if(import.meta.env.PROD && 'serviceWorker' in navigator)window.addEventListener('load',()=>{navigator.serviceWorker.register('/sw.js').catch(()=>{});});
+if(site.analyticsDomain){
+  const w=window as unknown as {plausible:((event:string,options:object)=>void)&{q?:unknown[]}};
+  w.plausible=w.plausible||Object.assign((event:string,options:object)=>{(w.plausible.q||=[]).push([event,options]);},{q:[]});
+  const script=document.createElement('script');script.defer=true;script.src=site.analyticsScript;script.dataset.domain=site.analyticsDomain;document.head.append(script);
+}

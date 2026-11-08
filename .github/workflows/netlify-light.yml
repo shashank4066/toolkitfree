@@ -9,14 +9,13 @@ permissions:
 
 jobs:
   deploy:
-    if: github.repository == 'shashank4066/toolkitfree' && github.event.before == '51cdc48e2a26f64632866a301b69adc7b6b01341'
+    if: github.repository == 'shashank4066/toolkitfree' && github.event.before == '416f4d4ede0d1e4ee7ed45cc5132aa51de129f3b'
     runs-on: ubuntu-latest
     timeout-minutes: 14
     env:
       SITE_URL: https://magical-gumdrop-c80d32.netlify.app
       SITE_NAME: magical-gumdrop-c80d32
       NETLIFY_TELEMETRY_DISABLED: "1"
-      XDG_CONFIG_HOME: ${{ runner.temp }}/toolkitfree-netlify-config
     steps:
       - name: Check out the tested update
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -40,6 +39,7 @@ jobs:
         id: auth
         env:
           AUTH_PUBLIC_KEY: MCowBQYDK2VuAyEAnCrv8f5sQqcABzjJpOx/Xdd6APjtYf0QHU0JlPWNhF8=
+          XDG_CONFIG_HOME: ${{ runner.temp }}/toolkitfree-netlify-config
         run: |
           npm install --prefix "$RUNNER_TEMP/toolkitfree-netlify-cli" --no-audit --no-fund netlify-cli@27.16.2
           node --input-type=module <<'NODE'
@@ -102,6 +102,8 @@ jobs:
 
       - name: Wait for approval and publish to the existing site
         if: steps.auth.outputs.artifact_name != ''
+        env:
+          XDG_CONFIG_HOME: ${{ runner.temp }}/toolkitfree-netlify-config
         run: |
           node --input-type=module <<'NODE'
           import { readFileSync, unlinkSync } from 'node:fs';

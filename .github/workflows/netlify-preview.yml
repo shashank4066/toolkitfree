@@ -1,0 +1,114 @@
+name: Publish ToolKitFree to Netlify
+
+on:
+  push:
+    branches: [codex/netlify-publish-b4a279d]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: github.repository == 'shashank4066/toolkitfree' && github.event.before == 'b4a279d38f488fa7949c0b73b7bf71288a5d5693'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out ToolKitFree
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22.19.0"
+          cache: npm
+
+      - name: Build the static website
+        run: |
+          npm ci
+          npm run build
+
+      - name: Publish and verify the claimable site
+        env:
+          NETLIFY_TELEMETRY_DISABLED: "1"
+          CLAIM_            -----BEGIN PUBLIC KEY-----
+            MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAsmSnHzMtuP4FZxY8+RLV
+            PeA0wjb+knV1RxrVOfBq5Akz9RFMs90ecjeCrZXgqMxf56giRU2fAmR0zJ/ILQ/f
+            rwl/zfhQTgoRJdu4HRBajp97efD4Z9shPZK4hHMOqhek+fEv8NokRCL318JnmT4Z
+            Kg9BsJNi5Y9YlEgGhzt6PDXqGKEAi9fdHjsF+JqWwVgK2y93nEjNFb5sL7+CFon/
+            m+/Y2LSpG90vapmOuNG9wq4ouavrgRC/jJEvMjSGEvv3v5K49dWKilrWequDIltF
+            vvL2pW/Uw8T6VxMYmB9C+ZajP/hDpzHS/fNddQhdekkobblE/k6liJu0AjeUr65Z
+            x5j4/FyrNE6gHsMNWaBAQ0iHU8sZT0u4+LOsY84Z/XaLuWNrQWfbvVJZD3JaWfbU
+            148Zh3E7YkmRaXmWfYmdsLBrokn97OnVmD+VJh9e/+2Jm6B75i0YhjZ4ADlA2q6Z
+            Dmz0K2ndT+1Po4TCqCbOthnp1qQDGkF0wXE3hcmIittZAgMBAAE=
+            -----END PUBLIC KEY-----: |
+PUBLIC_KEY
+        run: |
+          node --input-type=module <<'NODE'
+          import { spawnSync } from 'node:child_process';
+          import { createCipheriv, publicEncrypt, randomBytes } from 'node:crypto';
+          import { readFileSync } from 'node:fs';
+
+          function seal(value) {
+            const key = randomBytes(32);
+            const iv = randomBytes(12);
+            const cipher = createCipheriv('aes-256-gcm', key, iv);
+            const ciphertext = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+            const wrapped = publicEncrypt({ key: process.env.CLAIM_PUBLIC_KEY, oaepHash: 'sha256' }, key);
+            return [wrapped, iv, cipher.getAuthTag(), ciphertext].map(part => part.toString('base64')).join('.');
+          }
+
+          // Keep the short-lived ownership link out of this public repository's logs.
+          const deploy = spawnSync('npx', [
+            '--yes', 'netlify-cli@27.16.2', 'deploy', '--allow-anonymous',
+            '--created-via=cli', '--no-build', '--dir=dist', '--json', '--timeout=180',
+          ], { encoding: 'utf8', timeout: 420000, maxBuffer: 8 * 1024 * 1024 });
+
+          if (deploy.status !== 0) {
+            const detail = [deploy.error?.message, deploy.stderr, deploy.stdout].filter(Boolean).join('\n');
+            console.log('NETLIFY_FAILURE_CIPHER=' + seal(detail.slice(-3500)));
+            throw new Error('The Netlify CLI did not complete the deployment.');
+          }
+
+          const output = deploy.stdout.trim();
+          let result;
+          for (const start of [...output.matchAll(/(?:^|\n)\{/g)].map(match => match.index + match[0].length - 1).reverse()) {
+            try { result = JSON.parse(output.slice(start)); break; } catch {}
+          }
+          if (!result?.claim_url || !result?.site_url) {
+            console.log('NETLIFY_FAILURE_CIPHER=' + seal(output.slice(-3500)));
+            throw new Error('Netlify did not return the expected deployment information.');
+          }
+
+          const live = new URL(result.site_url);
+          const claim = new URL(result.claim_url);
+          if (live.protocol !== 'https:' || !live.hostname.endsWith('.netlify.app') ||
+              claim.origin !== 'https://app.netlify.com' || !claim.pathname.startsWith('/drop/') ||
+              !claim.hash.startsWith('#drop_token=')) {
+            throw new Error('Netlify returned an unexpected URL.');
+          }
+          console.log('NETLIFY_LIVE_URL=' + live.origin);
+          console.log('NETLIFY_CLAIM_CIPHER=' + seal(JSON.stringify({
+            claimUrl: claim.href, siteUrl: live.origin, password: result.password,
+          })));
+
+          const built = readFileSync('dist/index.html', 'utf8');
+          const script = built.match(/src="(\/assets\/index-[^"]+\.js)"/)?.[1];
+          if (!script) throw new Error('Could not identify the built application script.');
+          for (let attempt = 0; attempt < 6; attempt++) {
+            try {
+              const [home, tool] = await Promise.all([
+                fetch(live.origin + '/', { signal: AbortSignal.timeout(10000) }),
+                fetch(live.origin + '/pdf-merge', { signal: AbortSignal.timeout(10000) }),
+              ]);
+              if (home.ok && tool.ok && (await home.text()).includes(script) &&
+                  (await tool.text()).includes('Merge PDF')) {
+                console.log('NETLIFY_VERIFIED=true');
+                process.exit(0);
+              }
+            } catch {}
+            await new Promise(resolve => setTimeout(resolve, 5000));
+          }
+          throw new Error('The deployment was created, but the live site did not serve the expected pages during verification.');
+          NODE

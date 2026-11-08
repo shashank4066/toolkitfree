@@ -1,0 +1,227 @@
+name: Provision HTTPS for ToolKitFree
+on:
+  push:
+    branches: [codex/verify-toolkitfree-domain-mw7o2io3]
+    paths: [.github/workflows/provision-toolkitfree-https.yml]
+permissions: {}
+jobs:
+  provision:
+    if: github.repository == 'shashank4066/toolkitfree' && github.event.before == '9ca2172f418e9a838df17a3bd37a12c9f4a2dc8d'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SITE_NAME: magical-gumdrop-c80d32
+      NETLIFY_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Check public HTTPS and DNS
+        id: preflight
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync } from 'node:fs';
+          import { resolve4, resolveCaa, resolveCname } from 'node:dns/promises';
+          async function checkPage(url, canonical) {
+            try {
+              const response = await fetch(url, { signal: AbortSignal.timeout(7000) });
+              return response.ok && (await response.text()).includes('rel="canonical" href="' + canonical + '"');
+            } catch { return false; }
+          }
+          const domain = 'toolkitfree.online';
+          const www = 'www.' + domain;
+          const origin = 'https://' + domain;
+          async function verify() {
+            const [home, tool, alias] = await Promise.all([
+              checkPage(origin + '/', origin),
+              checkPage(origin + '/pdf-merge', origin + '/pdf-merge'),
+              checkPage('https://' + www + '/', origin),
+            ]);
+            return { home, tool, alias, ready: home && tool && alias };
+          }
+          const live = await verify();
+          if (live.ready) {
+            console.log('TKF_TLS_FINAL=' + JSON.stringify(live));
+            process.exit(0);
+          }
+          const [root, target, alias, caa] = await Promise.all([
+            resolve4(domain), resolve4('apex-loadbalancer.netlify.com'), resolveCname(www),
+            resolveCaa(domain).catch(() => []),
+          ]);
+          if (!root.length || !root.every(ip => target.includes(ip)) ||
+              !alias.some(name => name.replace(/\.$/, '') === process.env.SITE_NAME + '.netlify.app')) {
+            throw Error('Public DNS is not consistently pointing to the verified Netlify project.');
+          }
+          const issuers = caa.filter(record => 'issue' in record).map(record => record.issue.split(';')[0].trim());
+          console.log('TKF_TLS_DNS_READY=true CAA_ISSUERS=' + JSON.stringify(issuers));
+          if (issuers.length && !issuers.includes('letsencrypt.org')) {
+            throw Error('CAA records do not authorize Netlify’s certificate issuer, Let’s Encrypt.');
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT, 'needed=true\n');
+          NODE
+
+      - name: Set up Node.js
+        if: steps.preflight.outputs.needed == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+
+      - name: Prepare one-time Netlify authorization
+        id: auth
+        if: steps.preflight.outputs.needed == 'true'
+        env:
+          AUTH_PUBLIC_KEY: MCowBQYDK2VuAyEAtvhU+kwUbMTH/TQ8wZeJ6P4JsEjtZTy6WjH8XVBsMi0=
+          XDG_CONFIG_HOME: ${{ runner.temp }}/toolkitfree-netlify-config
+        run: |
+          npm install --prefix "$RUNNER_TEMP/toolkitfree-netlify-cli" --no-audit --no-fund netlify-cli@27.16.2
+          node --input-type=module <<'NODE'
+          import { createCipheriv, createPublicKey, diffieHellman, generateKeyPairSync, hkdfSync, randomBytes } from 'node:crypto';
+          import { appendFileSync, writeFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          import { spawnSync } from 'node:child_process';
+
+          const cli = join(process.env.RUNNER_TEMP, 'toolkitfree-netlify-cli/node_modules/.bin/netlify');
+          const result = spawnSync(cli, ['login', '--request', 'Provision the HTTPS certificate for toolkitfree.online on ToolKitFree', '--json'], {
+            encoding: 'utf8', timeout: 30000, maxBuffer: 4 * 1024 * 1024,
+          });
+          if (result.status !== 0) throw Error('Netlify could not create an authorization request.');
+          const output = result.stdout.trim();
+          const jsonStart = output.lastIndexOf('\n{') + 1;
+          const ticket = JSON.parse(output.slice(jsonStart));
+          const url = new URL(ticket.url);
+          if (url.origin !== 'https://app.netlify.com' || url.pathname !== '/authorize' ||
+              url.searchParams.get('response_type') !== 'ticket' || url.searchParams.get('ticket') !== ticket.ticket_id ||
+              !/^[A-Za-z0-9_-]{16,100}$/.test(ticket.ticket_id)) {
+            throw Error('Netlify returned an unexpected authorization request.');
+          }
+
+          const receiver = createPublicKey({ key: Buffer.from(process.env.AUTH_PUBLIC_KEY, 'base64'), format: 'der', type: 'spki' });
+          const sender = generateKeyPairSync('x25519');
+          const secret = diffieHellman({ privateKey: sender.privateKey, publicKey: receiver });
+          const key = Buffer.from(hkdfSync('sha256', secret, Buffer.alloc(0), 'toolkitfree-netlify-auth-v1', 32));
+          const iv = randomBytes(12);
+          const cipher = createCipheriv('aes-256-gcm', key, iv);
+          const sealed = Buffer.concat([
+            sender.publicKey.export({ format: 'der', type: 'spki' }), iv,
+            Buffer.concat([cipher.update(ticket.ticket_id, 'utf8'), cipher.final()]), cipher.getAuthTag(),
+          ]).toString('base64url');
+
+          // The repository can see only ciphertext. The ticket stays in this runner.
+          const name = 'netlify-tls-auth-' + sealed;
+          writeFileSync(join(process.env.RUNNER_TEMP, 'toolkitfree-netlify-ticket'), ticket.ticket_id, { mode: 0o600 });
+          writeFileSync(join(process.env.RUNNER_TEMP, 'toolkitfree-netlify-ready.txt'), 'The verified build is ready for account authorization.\n');
+          appendFileSync(process.env.GITHUB_OUTPUT, 'artifact_name=' + name + '\n');
+          NODE
+
+      - name: Make the encrypted authorization request available
+        if: steps.auth.outputs.artifact_name != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.auth.outputs.artifact_name }}
+          path: ${{ runner.temp }}/toolkitfree-netlify-ready.txt
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Check certificates and request HTTPS
+        if: steps.auth.outputs.artifact_name != ''
+        env:
+          XDG_CONFIG_HOME: ${{ runner.temp }}/toolkitfree-netlify-config
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, unlinkSync } from 'node:fs';
+          import { join } from 'node:path';
+          import { spawnSync } from 'node:child_process';
+          async function checkPage(url, canonical) {
+            try {
+              const response = await fetch(url, { signal: AbortSignal.timeout(7000) });
+              return response.ok && (await response.text()).includes('rel="canonical" href="' + canonical + '"');
+            } catch { return false; }
+          }
+          const domain = 'toolkitfree.online';
+          const www = 'www.' + domain;
+          const origin = 'https://' + domain;
+          async function verify() {
+            const [home, tool, alias] = await Promise.all([
+              checkPage(origin + '/', origin),
+              checkPage(origin + '/pdf-merge', origin + '/pdf-merge'),
+              checkPage('https://' + www + '/', origin),
+            ]);
+            return { home, tool, alias, ready: home && tool && alias };
+          }
+          const siteName = process.env.SITE_NAME;
+          const cli = join(process.env.RUNNER_TEMP, 'toolkitfree-netlify-cli/node_modules/.bin/netlify');
+          const ticketFile = join(process.env.RUNNER_TEMP, 'toolkitfree-netlify-ticket');
+          const ticket = readFileSync(ticketFile, 'utf8').trim();
+          const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+          function run(args, timeout = 30000) {
+            return spawnSync(cli, args, { encoding: 'utf8', timeout, maxBuffer: 8 * 1024 * 1024 });
+          }
+
+          function parse(stdout) {
+            const output = stdout.trim();
+            const starts = [...output.matchAll(/(?:^|\n)(?=[{\[])/g)].map(match => match.index + match[0].length);
+            for (const start of starts.reverse()) {
+              try { return JSON.parse(output.slice(start)); } catch {}
+            }
+          }
+
+          function api(method, data, options = {}) {
+            const result = run(['api', method, '--data', JSON.stringify(data)], options.timeout);
+            if (result.status === 0) {
+              const parsed = parse(result.stdout);
+              if (parsed !== undefined) return parsed;
+              throw Error(method + ' did not return JSON.');
+            }
+            const output = result.stderr + '\n' + result.stdout;
+            if (options.allowMissing && /\b404\b|certificate not found/i.test(output)) return [];
+            if (/bad dns|DNS verification|doesn.t appear to be served/i.test(output)) {
+              throw Error('Netlify is still waiting for DNS verification before issuing the certificate.');
+            }
+            if (/certificate parameter is required|existing certificate/i.test(output)) {
+              throw Error('Netlify reports an existing certificate. Its status is available in Domain management.');
+            }
+            const status = output.match(/\b(400|401|403|404|409|422|429|500|502|503)\b/)?.[1];
+            throw Error(method + ' failed' + (status ? ' (HTTP ' + status + ')' : '') + '.');
+          }
+
+          try {
+            const deadline = Date.now() + 8 * 60 * 1000;
+            let approved = false;
+            while (Date.now() < deadline) {
+              const result = run(['login', '--check', ticket, '--json']);
+              const approval = result.status === 0 ? parse(result.stdout) : undefined;
+              if (approval?.status === 'authorized') { approved = true; break; }
+              if (approval?.status === 'denied') throw Error('The Netlify authorization request was denied or expired.');
+              await pause(10000);
+            }
+            if (!approved) throw Error('Netlify approval was not received within the authorization window.');
+
+            let live = await verify();
+            if (!live.ready) {
+              const projects = api('listSites', { name: siteName, per_page: 100 });
+              const site = Array.isArray(projects) && projects.find(project => project.name === siteName);
+              if (!site?.id || site.custom_domain !== domain || !site.domain_aliases?.includes(www)) {
+                throw Error('The authorized account could not confirm both domains on the existing ToolKitFree project.');
+              }
+              const certificates = api('getAllCertificates', { site_id: site.id, domain }, { allowMissing: true });
+              if (!Array.isArray(certificates)) throw Error('Netlify did not return a certificate list.');
+              const summary = certificates.map(cert => ({
+                state: /^[a-z_]+$/i.test(cert.state ?? '') ? cert.state : 'unknown',
+                root: cert.domains?.includes(domain) ?? false,
+                www: cert.domains?.includes(www) ?? false,
+              }));
+              console.log('TKF_NETLIFY_CERTIFICATES=' + JSON.stringify(summary));
+              if (certificates.length === 0) {
+                const request = api('provisionSiteTLSCertificate', { site_id: site.id }, { timeout: 90000 });
+                const state = /^[a-z_]+$/i.test(request?.state ?? '') ? request.state : 'accepted';
+                console.log('TKF_NETLIFY_CERT_REQUESTED=' + state);
+              }
+              for (let attempt = 0; attempt < 8; attempt++) {
+                live = await verify();
+                if (live.ready) break;
+                if (attempt < 7) await pause(9000);
+              }
+            }
+            console.log('TKF_TLS_FINAL=' + JSON.stringify(live));
+          } finally {
+            unlinkSync(ticketFile);
+          }
+          NODE

@@ -1,0 +1,234 @@
+name: Connect toolkitfree.online to ToolKitFree
+
+on:
+  push:
+    branches: [codex/netlify-domain-9b537de]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.repository == 'shashank4066/toolkitfree' && github.event.before == '9b537deac401f56f35c6d80a29800b07b6a2b463'
+    runs-on: ubuntu-latest
+    timeout-minutes: 17
+    env:
+      SITE_URL: https://magical-gumdrop-c80d32.netlify.app
+      SITE_NAME: magical-gumdrop-c80d32
+      NETLIFY_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Check out the tested update
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+
+      - name: Build the production site
+        env:
+          VITE_SITE_URL: https://toolkitfree.online
+        run: |
+          npm ci
+          npm run build
+
+      - name: Prepare one-time Netlify authorization
+        id: auth
+        env:
+          AUTH_PUBLIC_KEY: MCowBQYDK2VuAyEABgiKIHVZ4FETVQr/aHdEBHBnSK/RZnGOhZjUWe/Mwyw=
+          XDG_CONFIG_HOME: ${{ runner.temp }}/toolkitfree-netlify-config
+        run: |
+          npm install --prefix "$RUNNER_TEMP/toolkitfree-netlify-cli" --no-audit --no-fund netlify-cli@27.16.2
+          node --input-type=module <<'NODE'
+          import { createCipheriv, createPublicKey, diffieHellman, generateKeyPairSync, hkdfSync, randomBytes } from 'node:crypto';
+          import { appendFileSync, writeFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          import { spawnSync } from 'node:child_process';
+
+          try {
+            const response = await fetch(process.env.SITE_URL + '/', { signal: AbortSignal.timeout(8000) });
+            const isToolKitFree = response.ok && (await response.text()).includes('ToolKitFree');
+            console.log('NETLIFY_PUBLIC_PRECHECK=' + response.status + ' TOOLKITFREE=' + isToolKitFree);
+          } catch {
+            console.log('NETLIFY_PUBLIC_PRECHECK=unreachable');
+          }
+
+          const cli = join(process.env.RUNNER_TEMP, 'toolkitfree-netlify-cli/node_modules/.bin/netlify');
+          const result = spawnSync(cli, ['login', '--request', 'Connect toolkitfree.online to ToolKitFree and deploy the tested build to ' + process.env.SITE_NAME, '--json'], {
+            encoding: 'utf8', timeout: 30000, maxBuffer: 4 * 1024 * 1024,
+          });
+          if (result.status !== 0) throw Error('Netlify could not create an authorization request.');
+          const output = result.stdout.trim();
+          const jsonStart = output.lastIndexOf('\n{') + 1;
+          const ticket = JSON.parse(output.slice(jsonStart));
+          const url = new URL(ticket.url);
+          if (url.origin !== 'https://app.netlify.com' || url.pathname !== '/authorize' ||
+              url.searchParams.get('response_type') !== 'ticket' || url.searchParams.get('ticket') !== ticket.ticket_id ||
+              !/^[A-Za-z0-9_-]{16,100}$/.test(ticket.ticket_id)) {
+            throw Error('Netlify returned an unexpected authorization request.');
+          }
+
+          const receiver = createPublicKey({ key: Buffer.from(process.env.AUTH_PUBLIC_KEY, 'base64'), format: 'der', type: 'spki' });
+          const sender = generateKeyPairSync('x25519');
+          const secret = diffieHellman({ privateKey: sender.privateKey, publicKey: receiver });
+          const key = Buffer.from(hkdfSync('sha256', secret, Buffer.alloc(0), 'toolkitfree-netlify-auth-v1', 32));
+          const iv = randomBytes(12);
+          const cipher = createCipheriv('aes-256-gcm', key, iv);
+          const sealed = Buffer.concat([
+            sender.publicKey.export({ format: 'der', type: 'spki' }), iv,
+            Buffer.concat([cipher.update(ticket.ticket_id, 'utf8'), cipher.final()]), cipher.getAuthTag(),
+          ]).toString('base64url');
+
+          // The repository can see only ciphertext. The ticket stays in this runner.
+          const name = 'netlify-domain-auth-' + sealed;
+          writeFileSync(join(process.env.RUNNER_TEMP, 'toolkitfree-netlify-ticket'), ticket.ticket_id, { mode: 0o600 });
+          writeFileSync(join(process.env.RUNNER_TEMP, 'toolkitfree-netlify-ready.txt'), 'The verified build is ready for account authorization.\n');
+          appendFileSync(process.env.GITHUB_OUTPUT, 'artifact_name=' + name + '\n');
+          NODE
+
+      - name: Make the encrypted authorization request available
+        if: steps.auth.outputs.artifact_name != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.auth.outputs.artifact_name }}
+          path: ${{ runner.temp }}/toolkitfree-netlify-ready.txt
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Wait for approval, publish, and connect the domain
+        if: steps.auth.outputs.artifact_name != ''
+        env:
+          XDG_CONFIG_HOME: ${{ runner.temp }}/toolkitfree-netlify-config
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, unlinkSync } from 'node:fs';
+          import { join } from 'node:path';
+          import { spawnSync } from 'node:child_process';
+          import { resolve4, resolveCname, resolveNs } from 'node:dns/promises';
+
+          const siteName = process.env.SITE_NAME;
+          const domain = 'toolkitfree.online';
+          const canonical = 'https://' + domain;
+          const www = 'www.' + domain;
+          const cli = join(process.env.RUNNER_TEMP, 'toolkitfree-netlify-cli/node_modules/.bin/netlify');
+          const ticketFile = join(process.env.RUNNER_TEMP, 'toolkitfree-netlify-ticket');
+          const ticket = readFileSync(ticketFile, 'utf8').trim();
+          const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+          function run(args, timeout = 30000) {
+            return spawnSync(cli, args, { encoding: 'utf8', timeout, maxBuffer: 8 * 1024 * 1024 });
+          }
+
+          function parseOutput(stdout) {
+            const output = stdout.trim();
+            const starts = [...output.matchAll(/(?:^|\n)(?=[{\[])/g)].map(match => match.index + match[0].length);
+            for (const start of starts.reverse()) {
+              try { return JSON.parse(output.slice(start)); } catch {}
+            }
+          }
+
+          function command(args, label, timeout) {
+            const result = run(args, timeout);
+            if (result.status === 0) {
+              const response = parseOutput(result.stdout);
+              if (response !== undefined) return response;
+              throw Error(label + ' did not return JSON.');
+            }
+            const message = result.stderr + '\n' + result.stdout;
+            if (/already (?:in use|assigned|registered)|another (?:site|project|account)/i.test(message)) {
+              throw Error(label + ' failed because Netlify says the domain is assigned elsewhere.');
+            }
+            if (/verify.*domain|domain.*verifi|domain ownership/i.test(message)) {
+              throw Error(label + ' requires domain ownership verification in Netlify.');
+            }
+            const status = message.match(/\b(400|401|403|404|409|422|429|500|502|503)\b/)?.[1];
+            throw Error(label + ' failed' + (status ? ' (HTTP ' + status + ')' : '') + '.');
+          }
+
+          function api(method, data) {
+            return command(['api', method, '--data', JSON.stringify(data)], 'Netlify ' + method);
+          }
+
+          async function probe(url, expectedCanonical) {
+            try {
+              const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+              const html = response.ok ? await response.text() : '';
+              return { status: response.status, match: html.includes('rel="canonical" href="' + expectedCanonical + '"') };
+            } catch (error) {
+              const code = error?.cause?.code;
+              return { status: /^[A-Z0-9_]+$/.test(code ?? '') ? code : 'unreachable', match: false };
+            }
+          }
+
+          async function publicDns() {
+            const queries = await Promise.allSettled([resolveNs(domain), resolve4(domain), resolveCname(www)]);
+            for (const [index, key] of ['NS', 'A', 'WWW_CNAME'].entries()) {
+              const result = queries[index];
+              const records = result.status === 'fulfilled' ? result.value : [];
+              console.log('TOOLKITFREE_DNS_' + key + '=' + JSON.stringify(records));
+            }
+          }
+
+          try {
+            const deadline = Date.now() + 8 * 60 * 1000;
+            let authorized = false;
+            while (Date.now() < deadline) {
+              const check = run(['login', '--check', ticket, '--json']);
+              const result = check.status === 0 ? parseOutput(check.stdout) : undefined;
+              if (result?.status === 'authorized') { authorized = true; break; }
+              if (result?.status === 'denied') throw Error('Netlify declined or expired the authorization request.');
+              await pause(10000);
+            }
+            if (!authorized) throw Error('Netlify approval was not received within the authorization window.');
+
+            const projects = api('listSites', { name: siteName, per_page: 100 });
+            const site = Array.isArray(projects) && projects.find(project => project.name === siteName);
+            if (!site || !/^[a-f0-9-]{36}$/i.test(site.id)) throw Error('The authorized account could not access the existing ToolKitFree project.');
+            const siteId = site.id;
+
+            const deployment = command([
+              'deploy', '--prod', '--no-build', '--dir=dist', '--site', siteId, '--json', '--timeout=180',
+            ], 'Netlify production deployment', 230000);
+            const published = api('getSite', { site_id: siteId });
+            if (!deployment.deploy_id || published.published_deploy?.id !== deployment.deploy_id) {
+              throw Error('Netlify did not confirm the tested build as the active production deployment.');
+            }
+            console.log('NETLIFY_DOMAIN_BUILD_PUBLISHED=true');
+
+            const aliases = new Set(published.domain_aliases ?? []);
+            if (published.custom_domain && published.custom_domain !== domain) aliases.add(published.custom_domain);
+            aliases.add(www);
+            aliases.delete(domain);
+            if (published.custom_domain !== domain || !published.domain_aliases?.includes(www)) {
+              api('updateSite', {
+                site_id: siteId,
+                body: { custom_domain: domain, domain_aliases: [...aliases] },
+              });
+            }
+            const updated = api('getSite', { site_id: siteId });
+            if (updated.custom_domain !== domain) throw Error('Netlify did not confirm toolkitfree.online as the primary domain.');
+            console.log('NETLIFY_CUSTOM_DOMAIN_ATTACHED=true');
+            console.log('NETLIFY_WWW_ALIAS_REPORTED=' + Boolean(updated.domain_aliases?.includes(www)));
+
+            await publicDns();
+            const fallback = await probe(process.env.SITE_URL + '/', canonical);
+            console.log('NETLIFY_PUBLIC_ORIGIN_HTTP=' + fallback.status + ' BUILD_MATCH=' + fallback.match);
+            let home, tool, wwwHome;
+            for (let attempt = 0; attempt < 6; attempt++) {
+              [home, tool, wwwHome] = await Promise.all([
+                probe(canonical + '/', canonical),
+                probe(canonical + '/pdf-merge', canonical + '/pdf-merge'),
+                probe('https://' + www + '/', canonical),
+              ]);
+              if (home.match && tool.match && wwwHome.match) break;
+              if (attempt < 5) await pause(6500);
+            }
+            console.log('TOOLKITFREE_DOMAIN_VERIFIED=' + Boolean(home?.match && tool?.match));
+            console.log('TOOLKITFREE_WWW_VERIFIED=' + Boolean(wwwHome?.match));
+            console.log('TOOLKITFREE_HTTP_STATUS=' + [home?.status, tool?.status, wwwHome?.status].join(','));
+          } finally {
+            unlinkSync(ticketFile);
+          }
+          NODE

@@ -1,0 +1,78 @@
+name: Verify ToolKitFree public domain
+
+on:
+  push:
+    branches: [codex/verify-toolkitfree-domain-mw7o2io3]
+    paths: [.github/workflows/verify-toolkitfree-domain.yml]
+
+permissions: {}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Check DNS and public HTTPS
+        run: |
+          node --input-type=module <<'NODE'
+          import { Resolver, resolve4, resolve6, resolveCname, resolveNs } from 'node:dns/promises';
+
+          const host = 'toolkitfree.online';
+          const www = 'www.' + host;
+          const origin = 'https://' + host;
+          const target = 'magical-gumdrop-c80d32.netlify.app';
+          const loadBalancer = 'apex-loadbalancer.netlify.com';
+          const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+          async function lookup(query) {
+            try { return await query; } catch { return []; }
+          }
+
+          async function authoritative(nameservers) {
+            return Promise.all(nameservers.slice(0, 2).map(async ns => {
+              const [address] = await lookup(resolve4(ns));
+              if (!address) return { ns, apex: [], www: [] };
+              const resolver = new Resolver({ timeout: 2200, tries: 1 });
+              resolver.setServers([address]);
+              const [apex, alias] = await Promise.all([
+                lookup(resolver.resolve4(host)),
+                lookup(resolver.resolveCname(www)),
+              ]);
+              return { ns, apex, www: alias };
+            }));
+          }
+
+          async function checkPage(url, expectedPath) {
+            try {
+              const response = await fetch(url, { signal: AbortSignal.timeout(7000) });
+              const html = response.ok ? await response.text() : '';
+              const final = new URL(response.url);
+              const expected = 'rel="canonical" href="' + origin + expectedPath + '"';
+              const page = html.includes(expected) && (expectedPath ? html.includes('<h1>Merge PDF</h1>') : html.includes('ToolKitFree'));
+              return { status: response.status, site: page, apex: final.hostname === host };
+            } catch (error) {
+              const code = error?.cause?.code ?? error?.name;
+              return { status: /^[A-Za-z0-9_]+$/.test(code ?? '') ? code : 'unreachable', site: false, apex: false };
+            }
+          }
+
+          const nameservers = await lookup(resolveNs(host));
+          const netlify = await lookup(resolve4(loadBalancer));
+          const authority = await authoritative(nameservers);
+          console.log('TKF_DNS_AUTHORITY=' + JSON.stringify({ nameservers, netlify, authority }));
+
+          for (let attempt = 0; attempt < 6; attempt++) {
+            const [apex, ipv6, alias, home, tool, wwwPage] = await Promise.all([
+              lookup(resolve4(host)),
+              lookup(resolve6(host)),
+              lookup(resolveCname(www)),
+              checkPage(origin + '/', ''),
+              checkPage(origin + '/pdf-merge', '/pdf-merge'),
+              checkPage('https://' + www + '/', ''),
+            ]);
+            const dns = { apex, ipv6, www: alias, apexPointsToNetlify: apex.some(ip => netlify.includes(ip)), wwwPointsToNetlify: alias.some(name => name.replace(/\.$/, '') === target) };
+            console.log('TKF_PUBLIC_CHECK=' + JSON.stringify({ attempt: attempt + 1, dns, home, tool, wwwPage }));
+            if (home.site && tool.site && wwwPage.site) break;
+            if (attempt < 5) await pause(9000);
+          }
+          NODE

@@ -5,7 +5,7 @@ import { toolGuides } from '../config/tool-guides';
 const pages: Record<string, { title: string; description: string } | undefined> = {
   '/': {
     title: 'Free PDF, Image & Developer Tools',
-    description: 'Merge PDFs, compress photos to a file size limit, format JSON, and make QR codes for free. Tools run in your browser without uploads or signups.',
+    description: 'Merge PDFs, compress images to a file size limit, format JSON, and make QR codes for free. Files stay in your browser. No signup required.',
   },
   '/all-tools': {
     title: 'Browse Free PDF, Image, Text & Developer Tools',
@@ -55,6 +55,16 @@ export function toolFaq(tool: Tool) {
       {
         question: 'Will my image be watermarked or uploaded anywhere?',
         answer: 'Your browser processes the photo on your device. The website adds no watermark.'
+      }
+    ],
+    'compress-image-to-100kb': [
+      {
+        question: 'What is the 100 KB limit in bytes?',
+        answer: 'This tool treats 100 KB as 100,000 bytes per image. Check the final size shown before uploading to a form.'
+      },
+      {
+        question: 'Will compressing to 100 KB change the image dimensions?',
+        answer: 'The tool may reduce the pixel dimensions when lowering JPG or WebP quality is insufficient. Use Dimensions & File Size if you need to keep a specific width and height.'
       }
     ],
     'pdf-merge': [
@@ -115,7 +125,7 @@ export function metadata(pathname: string) {
     : page?.description ?? 'Find the PDF, image, text, or developer tool you were looking for in the tool directory.';
 
   return {
-    title: title + ' | ' + site.name,
+    title: path === '/' ? site.name + ' | ' + title : title + ' | ' + site.name,
     description,
     url: tool || page ? pageUrl(path) : undefined,
     tool,
@@ -126,7 +136,14 @@ export function schemas(pathname: string) {
   const { tool, url, description } = metadata(pathname);
   if (!url) return [];
   if (normalizePagePath(pathname) === '/') {
-    return [{ '@context': 'https://schema.org', '@type': 'WebSite', name: site.name, url, description }];
+    return [{
+      '@context': 'https://schema.org',
+      '@type': 'WebSite',
+      name: site.name,
+      alternateName: new URL(url).hostname,
+      url,
+      description,
+    }];
   }
   if (!tool) return [];
 

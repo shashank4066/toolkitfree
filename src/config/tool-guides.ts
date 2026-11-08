@@ -22,7 +22,7 @@ export const toolGuides: Record<string, ToolGuide | undefined> = {
     relatedSlugs: ['image-crop', 'image-target-size', 'image-resizer', 'image-converter'],
   },
   'image-target-size': {
-    heading: 'Compress Images to 20 KB, 50 KB or 100 KB',
+    heading: 'Compress Images to 20 KB, 50 KB or a Custom Size',
     description: 'Compress a JPG, PNG or WebP photo to fit a limit such as 20 KB, 50 KB or 100 KB. Pick a preset or enter your own size. Photos stay on your device.',
     steps: [
       'Choose or drop the photos you want to compress.',
@@ -32,7 +32,20 @@ export const toolGuides: Record<string, ToolGuide | undefined> = {
     ],
     exampleHeading: 'Fit a 50 KB photo upload limit',
     example: 'Choose the 50 KB preset to set a maximum of 50,000 bytes. The tool tries lower image quality and, when needed, smaller pixel dimensions. If a form also requires a specific width and height, use Dimensions & File Size to keep those dimensions fixed. Check the result because some images cannot reach a very small target.',
-    relatedSlugs: ['image-dimensions-size', 'image-compressor', 'image-resizer', 'image-converter'],
+    relatedSlugs: ['compress-image-to-100kb', 'image-dimensions-size', 'image-compressor', 'image-converter'],
+  },
+  'compress-image-to-100kb': {
+    heading: 'Compress Image to 100 KB',
+    description: 'Compress a JPG, PNG or WebP image to fit a 100 KB upload limit. Check the final size and download your file. Everything runs in your browser.',
+    steps: [
+      'Choose or drop the image you need to make smaller.',
+      'Choose the output format your form accepts. JPG works well for photos, while PNG or WebP can preserve transparency.',
+      'Select Compress to 100 KB. The tool tries to fit each image within 100,000 bytes.',
+      'Check the file size and preview. If the result meets your form requirements, download it and use the new file.',
+    ],
+    exampleHeading: 'Fit a 100 KB upload limit and keep text readable',
+    example: 'If a form rejects a 240 KB scan, crop any blank margins first, then compress it as a JPG if the form accepts that format. Zoom into the result and check that the smallest text is still legible. If the form also specifies exact pixels, use Dimensions & File Size to set both requirements.',
+    relatedSlugs: ['image-target-size', 'image-dimensions-size', 'image-crop', 'image-compressor'],
   },
   'image-compressor': {
     heading: 'Compress a Batch of Images',

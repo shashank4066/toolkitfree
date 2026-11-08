@@ -11,6 +11,7 @@ export type Tool = {
   seoTitle?: string;
   note?: string;
   heading?: string;
+  fixedImageTargetKb?: number;
 };
 
 export const categories = [
@@ -196,7 +197,7 @@ export const tools: Tool[] = [
   {
     slug: 'image-target-size',
     name: 'Compress to KB / MB',
-    heading: 'Compress Image to 10KB, 20KB, 50KB, 100KB Online Free',
+    heading: 'Compress Images to a File Size in KB or MB',
     category: 'image',
     icon: 'Target',
     description: 'Compress an image to fit a maximum size in KB or MB.',
@@ -208,7 +209,7 @@ export const tools: Tool[] = [
       'reduce photo size in kb', 'resize image to 50kb', 'compress image under 100kb', 'passport photo 50 kb',
       'government form photo 100 kb', 'signature compress to 10kb', 'signature compress to 20kb'
     ],
-    seoTitle: 'Compress Image to 20 KB, 50 KB or 100 KB',
+    seoTitle: 'Compress Image to 20 KB, 50 KB or a Custom Size',
     popular: true
   },
   {
@@ -241,6 +242,18 @@ export const tools: Tool[] = [
       'signature resize 20kb', 'photo resize 20kb'
     ],
     seoTitle: 'Resize Photo in CM and KB'
+  },
+  {
+    slug: 'compress-image-to-100kb',
+    name: '100 KB Image Compressor',
+    heading: 'Compress Image to 100 KB',
+    category: 'image',
+    icon: 'Target',
+    description: 'Make a JPG, PNG or WebP image fit a 100 KB upload limit.',
+    component: 'image/ImageTools',
+    keywords: ['compress image to 100kb', 'compress photo to 100 kb', 'image under 100kb', 'compress jpg to 100 kb'],
+    seoTitle: 'Compress Image to 100 KB Free Online',
+    fixedImageTargetKb: 100,
   },
   {
     slug: 'image-crop',
@@ -721,6 +734,13 @@ export function searchTools(query: string): Tool[] {
       if (raw.includes('compress') || raw.includes('image') || raw.includes('photo')) {
         if (tool.slug === 'image-target-size') score += 120;
         if (tool.slug === 'image-compressor') score += 80;
+        if (
+          tool.fixedImageTargetKb === intent.target &&
+          intent.unit === 'KB' &&
+          tokens.includes('compress') &&
+          !tokens.includes('resize') &&
+          !tokens.includes('pdf')
+        ) score += 120;
       }
       if (raw.includes('resize') || raw.includes('dimension')) {
         if (tool.slug === 'image-dimensions-size') score += 120;
@@ -783,6 +803,7 @@ export function getDirectToolUrl(query: string): string | null {
   const results = searchTools(query);
   if (!results.length) return null;
   const best = results[0];
+  if (best.fixedImageTargetKb !== undefined) return '/' + best.slug + '/';
   const intent = parseSearchIntent(query);
 
   const params = new URLSearchParams();

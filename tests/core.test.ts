@@ -49,6 +49,7 @@ describe('catalog and search metadata',()=>{
     expect(getDirectToolUrl('online pdf merger')).toBe('/pdf-merge');
     expect(getDirectToolUrl('image resize to 20 kb')).toBe('/image-dimensions-size?target=20&unit=KB');
     expect(getDirectToolUrl('compress image to 50kb')).toBe('/image-target-size?target=50&unit=KB');
+    expect(getDirectToolUrl('compress image to 100 KB')).toBe('/compress-image-to-100kb/');
     expect(getDirectToolUrl('jpg to pdf')).toBe('/image-to-pdf');
     expect(parseSearchIntent('compress to 10kb')).toEqual({target:10,unit:'KB'});
   });

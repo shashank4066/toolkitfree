@@ -149,6 +149,20 @@ await test('Split PDF every page and ZIP', async () => {
   assert.equal(Object.keys((await JSZip.loadAsync(bytes)).files).length, 3);
 });
 await test('Image compression meets exact 50 KB target',async()=>{await goto('image-target-size');await upload(imagePath);await page.getByRole('button',{name:'50 KB',exact:true}).click();await page.getByRole('button',{name:'Compress to KB / MB',exact:true}).click();await result();const file=await download();assert.ok(file.bytes.length<=50000);});
+await test('Dedicated image compressor enforces the 100 KB limit', async () => {
+  await goto('');
+  await page.getByRole('link', { name: 'Compress an image to 100 KB', exact: true }).click();
+  await page.waitForURL('**/compress-image-to-100kb/');
+  await page.waitForFunction(() => document.querySelector('link[rel="canonical"]')?.href.endsWith('/compress-image-to-100kb/'));
+
+  await goto('compress-image-to-100kb/?target=0.001&unit=KB');
+  await upload(imagePath);
+  await page.getByRole('button', { name: 'Compress to 100 KB', exact: true }).click();
+  await result();
+  const file = await download();
+  assert.ok(file.bytes.length > 1 && file.bytes.length <= 100000);
+  await page.getByText('Within your size target.', { exact: false }).waitFor();
+});
 await test('Image resize produces exact dimensions',async()=>{await goto('image-resizer');await upload(imagePath);await page.getByLabel('Width (px)',{exact:true}).fill('600');await page.getByRole('button',{name:'Resize Image',exact:true}).click();await result();const file=await download();const dims=await page.evaluate(async base64=>{const raw=Uint8Array.from(atob(base64),c=>c.charCodeAt(0));const image=await createImageBitmap(new Blob([raw]));const result={w:image.width,h:image.height};image.close();return result;},file.bytes.toString('base64'));assert.deepEqual(dims,{w:600,h:400});});
 await test('Image to PDF page creation',async()=>{await goto('image-to-pdf');await upload(imagePath);await page.getByRole('button',{name:'Image to PDF',exact:true}).click();await result();assert.equal(await countPdf((await download()).bytes),1);});
 await test('JSON formatter validates, formats, flags errors',async()=>{await goto('json-formatter');await page.getByLabel('Your JSON').fill('{"hello":true,"n":1}');await page.getByRole('button',{name:'Format & validate'}).click();await page.getByText('Valid JSON · ready to use').waitFor();assert.equal(JSON.parse(await page.getByLabel('Formatted JSON').innerText()).hello,true);await page.getByLabel('Your JSON').fill('{"hello":}');await page.getByRole('button',{name:'Format & validate'}).click();await page.getByRole('alert').waitFor();});

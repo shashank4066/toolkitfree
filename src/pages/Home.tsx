@@ -1,5 +1,6 @@
 import { ArrowRight, Check, Download, ShieldCheck, SlidersHorizontal, Upload } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { site } from '../config/site';
 import { categories, commonFaq, popularSlugs, tools } from '../config/tools';
 import { categoryPath } from '../lib/seo';
 import { FAQ } from '../components/FAQ';
@@ -9,6 +10,7 @@ import { AdSlot } from '../components/SiteShell';
 import { ToolCard } from '../components/ToolCard';
 
 const quickTasks = [
+  { title: 'Compress an image to 100 KB', path: '/compress-image-to-100kb/', category: 'image', icon: 'Target' },
   { title: 'Compress an image to 50 KB', path: '/image-target-size/?target=50&unit=KB', category: 'image', icon: 'Target' },
   { title: 'Resize a photo by cm and KB', path: '/image-dimensions-size/', category: 'image', icon: 'Ruler' },
   { title: 'Combine multiple PDFs', path: '/pdf-merge/', category: 'pdf', icon: 'Files' },
@@ -29,7 +31,7 @@ export default function Home() {
           <div className="hero-intro">
             <h1 id="home-title">Free PDF, image and developer tools</h1>
             <p className="hero-subtitle">
-              Merge PDFs, resize photos to a file size limit, format JSON, and make QR codes in your browser.
+              Use {site.name} to merge PDFs, compress images to a file size limit, format JSON, and make QR codes in your browser.
             </p>
             <SearchBar />
             <ul className="trust-row" aria-label="Tool features">

@@ -16,7 +16,13 @@ const presets:[string,number,number][]=[['Instagram post',1080,1080],['Instagram
 type ImageResult={blob:Blob;width:number;height:number;met:boolean};
 export default function ImageTools({tool}:{tool:Tool}) {
   const [searchParams] = useSearchParams();
-  const slug=tool.slug,isResize=['image-resizer','image-dimensions-size'].includes(slug),isCrop=slug==='image-crop',isCompress=['image-compressor','image-target-size','image-dimensions-size'].includes(slug);
+  const slug = tool.slug;
+  const fixedTargetKb = tool.fixedImageTargetKb;
+  const hasFixedTarget = fixedTargetKb !== undefined;
+  const isResize = ['image-resizer', 'image-dimensions-size'].includes(slug);
+  const isCrop = slug === 'image-crop';
+  const isCompress = hasFixedTarget || ['image-compressor', 'image-target-size', 'image-dimensions-size'].includes(slug);
+  const actionLabel = hasFixedTarget ? 'Compress to ' + fixedTargetKb + ' KB' : tool.name;
   const paramTarget = Number(searchParams.get('target') || searchParams.get('kb') || searchParams.get('mb') || searchParams.get('size'));
   const paramUnit = (searchParams.get('unit') || (searchParams.get('mb') ? 'MB' : 'KB')).toUpperCase() === 'MB' ? 'MB' : 'KB';
   const paramWidth = Number(searchParams.get('width') || searchParams.get('w'));
@@ -31,9 +37,10 @@ export default function ImageTools({tool}:{tool:Tool}) {
       ? paramFormat
       : 'jpg',
   );
-  const [targetOn,setTargetOn]=useState(paramTarget > 0 || (slug!=='image-compressor'&&slug!=='image-dimensions-size'));
-  const [target,setTarget]=useState(paramTarget > 0 ? paramTarget : 100);
-  const [sizeUnit,setSizeUnit]=useState(paramUnit);
+  const [targetOn, setTargetOn] = useState(paramTarget > 0 || (slug !== 'image-compressor' && slug !== 'image-dimensions-size'));
+  const [target, setTarget] = useState(paramTarget > 0 ? paramTarget : 100);
+  const [sizeUnit, setSizeUnit] = useState(paramUnit);
+  const targetBytes = hasFixedTarget ? fixedTargetKb * 1000 : targetOn ? target * (sizeUnit === 'MB' ? 1000000 : 1000) : 0;
   const [width,setWidth]=useState(paramWidth > 0 ? paramWidth : 1200);
   const [height,setHeight]=useState(paramHeight > 0 ? paramHeight : 800);
   const [units,setUnits]=useState(['px','cm','percent'].includes(paramUnits) ? paramUnits : 'px');
@@ -89,7 +96,7 @@ export default function ImageTools({tool}:{tool:Tool}) {
   async function process(){
     if(!files.length)return;
     if(isResize&&units!=='percent'&&(!(width>0)||!(height>0)||!Number.isFinite(width+height))){task.setError('Enter a width and height greater than zero.');return;}
-    if(isCompress&&targetOn&&(!(target>0)||!Number.isFinite(target))){task.setError('Enter a target file size greater than zero.');return;}
+    if(isCompress&&!hasFixedTarget&&targetOn&&(!(target>0)||!Number.isFinite(target))){task.setError('Enter a target file size greater than zero.');return;}
     if(units==='cm'&&(!(dpi>0)||!Number.isFinite(dpi))){task.setError('Enter a DPI greater than zero.');return;}
     setOutputs([]);
     const results=await task.run(async(report,signal)=>{const list:OutputFile[]=[];
@@ -98,9 +105,22 @@ export default function ImageTools({tool}:{tool:Tool}) {
         let w=0,h=0;if(isResize){if(units==='percent'){if(percent<=0||percent>1000)throw new Error('Choose a percentage between 1 and 1000.');w=dims.width*percent/100;h=dims.height*percent/100;}else if(units==='cm'){w=width/2.54*dpi;h=height/2.54*dpi;}else{w=width;h=height;}}
         const cropData=isCrop?(aspect==='free'?{x:freeCrop.x/100*dims.width,y:freeCrop.y/100*dims.height,width:Math.min(freeCrop.width,100-freeCrop.x)/100*dims.width,height:Math.min(freeCrop.height,100-freeCrop.y)/100*dims.height}:cropArea):undefined;
         if(isCrop&&(!cropData||cropData.width<=0||cropData.height<=0))throw new Error('Choose a crop area first.');
-        const options:ImageOptions={mode:slug,format,quality,target:isCompress&&targetOn?target*(sizeUnit==='MB'?1000000:1000):0,width:w,height:h,keepDimensions:slug==='image-dimensions-size',rotation:slug==='image-rotate'?rotation:0,flipX:slug==='image-rotate'&&flipX,flipY:slug==='image-rotate'&&flipY,crop:cropData};
+        const options:ImageOptions={mode:slug,format,quality,target:isCompress?targetBytes:0,width:w,height:h,keepDimensions:slug==='image-dimensions-size',rotation:slug==='image-rotate'?rotation:0,flipX:slug==='image-rotate'&&flipX,flipY:slug==='image-rotate'&&flipY,crop:cropData};
         const result=await imageJob<ImageResult>({blob,options},(n,message)=>report((i+n/100)/files.length*100,'Image '+(i+1)+' of '+files.length+' · '+message),signal);
-        list.push({name:baseName(file.name)+'-'+slug.replace('image-','')+'.'+format,blob:result.blob,originalSize:file.size,preview:true,note:result.width+' × '+result.height+' px'+(!result.met?' · Target not reached. This is the smallest output found at the permitted dimensions. Try a larger target or smaller dimensions.':options.target?' · Within your size target.':'')});report((i+1)/files.length*100,'Finished image '+(i+1));
+        const retry = hasFixedTarget
+          ? 'Try JPG or WebP output, or resize the source image first.'
+          : 'Try a larger target or smaller dimensions.';
+        const sizeNote = result.met
+          ? (options.target ? ' · Within your size target.' : '')
+          : ' · Target not reached. This is the smallest output found at the permitted dimensions. ' + retry;
+        list.push({
+          name: baseName(file.name) + '-' + slug.replace('image-', '') + '.' + format,
+          blob: result.blob,
+          originalSize: file.size,
+          preview: true,
+          note: result.width + ' × ' + result.height + ' px' + sizeNote,
+        });
+        report((i + 1) / files.length * 100, 'Finished image ' + (i + 1));
       }return list;
     });if(results)setOutputs(results);
   }
@@ -113,7 +133,10 @@ export default function ImageTools({tool}:{tool:Tool}) {
     </div>{files.length>0&&<div className="options-panel"><h3><SlidersHorizontal size={16}/>Image settings</h3>{!preview && !task.error && <p className="help-text" role="status">Reading image…</p>}<fieldset disabled={task.busy || !preview} style={{border:0,padding:0,margin:0}}>
     <SelectField label="Output format" value={format} onChange={e=>setFormat(e.target.value)} options={[['jpg','JPG'],['png','PNG · lossless'],['webp','WebP'],...(slug==='image-converter'?[['avif','AVIF · if browser supports encoding'] as [string,string]]:[])]}/>
     {format!=='png'&&<RangeField label="Quality (%)" min={5} max={100} value={quality} onChange={e=>setQuality(Number(e.target.value))}/>}
-    {isCompress && <>
+    {hasFixedTarget && (
+      <p className="help-text">The limit is {fixedTargetKb} KB per image. The tool may reduce dimensions to fit it.</p>
+    )}
+    {isCompress && !hasFixedTarget && <>
       {slug !== 'image-target-size' && (
         <Checkbox label="Use a file size target" checked={targetOn} onChange={e => setTargetOn(e.target.checked)} />
       )}
@@ -152,7 +175,7 @@ export default function ImageTools({tool}:{tool:Tool}) {
     {isCrop&&<><SelectField label="Crop ratio" value={aspect} onChange={e=>setAspect(e.target.value)} options={[['1','Square · 1:1'],[String(4/3),'4:3'],[String(16/9),'16:9'],['free','Free crop rectangle']]}/>{aspect==='free'?<><div className="field-row"><NumberField label="Left (%)" min={0} max={99} value={freeCrop.x} onChange={e=>setFreeCrop({...freeCrop,x:Math.min(99,Math.max(0,Number(e.target.value)))})}/><NumberField label="Top (%)" min={0} max={99} value={freeCrop.y} onChange={e=>setFreeCrop({...freeCrop,y:Math.min(99,Math.max(0,Number(e.target.value)))})}/></div><div className="field-row"><NumberField label="Width (%)" min={1} max={100} value={freeCrop.width} onChange={e=>setFreeCrop({...freeCrop,width:Number(e.target.value)})}/><NumberField label="Height (%)" min={1} max={100} value={freeCrop.height} onChange={e=>setFreeCrop({...freeCrop,height:Number(e.target.value)})}/></div></>:<RangeField label="Zoom" min={1} max={3} step={.01} value={zoom} onChange={e=>setZoom(Number(e.target.value))}/>}</>}
     {slug==='image-rotate'&&<><SelectField label="Rotation" value={rotation} onChange={e=>setRotation(Number(e.target.value))} options={[['0','No rotation'],['90','90° clockwise'],['180','180°'],['270','90° counterclockwise']]}/><Checkbox label="Flip horizontally" checked={flipX} onChange={e=>setFlipX(e.target.checked)}/><Checkbox label="Flip vertically" checked={flipY} onChange={e=>setFlipY(e.target.checked)}/></>}
     {slug==='image-remove-metadata'&&<p className="help-text">Re-encoding removes embedded EXIF, camera and GPS tags. It does not hide information visible within the picture. Choose PNG for lossless pixels.</p>}
-    <Button style={{marginTop:18}} onClick={process} disabled={task.busy||!preview}>{task.busy?'Working…':tool.name}<ArrowRight size={15}/></Button></fieldset></div>}</div>
+    <Button style={{marginTop:18}} onClick={process} disabled={task.busy||!preview}>{task.busy?'Working…':actionLabel}<ArrowRight size={15}/></Button></fieldset></div>}</div>
     {task.busy&&<Progress value={task.progress} status={task.status} onCancel={task.cancel}/>}
     {task.error&&<p role="alert" className="error-message">{task.error}</p>}
     <Results outputs={outputs} onReset={()=>{setFiles([]);setOutputs([]);setPreview(undefined);task.setError('');}}/>

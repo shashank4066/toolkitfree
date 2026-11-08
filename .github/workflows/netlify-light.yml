@@ -1,0 +1,155 @@
+name: Deploy ToolKitFree light mode
+
+on:
+  push:
+    branches: [codex/netlify-light-51cdc48]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.repository == 'shashank4066/toolkitfree' && github.event.before == '51cdc48e2a26f64632866a301b69adc7b6b01341'
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      SITE_URL: https://magical-gumdrop-c80d32.netlify.app
+      SITE_NAME: magical-gumdrop-c80d32
+      NETLIFY_TELEMETRY_DISABLED: "1"
+      XDG_CONFIG_HOME: ${{ runner.temp }}/toolkitfree-netlify-config
+    steps:
+      - name: Check out the tested update
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22.19.0"
+          cache: npm
+
+      - name: Build the production site
+        env:
+          VITE_SITE_URL: ${{ env.SITE_URL }}
+        run: |
+          npm ci
+          npm run build
+
+      - name: Prepare one-time Netlify authorization
+        id: auth
+        env:
+          AUTH_PUBLIC_KEY: MCowBQYDK2VuAyEAnCrv8f5sQqcABzjJpOx/Xdd6APjtYf0QHU0JlPWNhF8=
+        run: |
+          npm install --prefix "$RUNNER_TEMP/toolkitfree-netlify-cli" --no-audit --no-fund netlify-cli@27.16.2
+          node --input-type=module <<'NODE'
+          import { createCipheriv, createPublicKey, diffieHellman, generateKeyPairSync, hkdfSync, randomBytes } from 'node:crypto';
+          import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          import { spawnSync } from 'node:child_process';
+
+          function theme(html) {
+            return [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].find(m => m[1].includes('tkf-theme'))?.[1].trim();
+          }
+          const live = await fetch(process.env.SITE_URL + '/?check=light-default', { signal: AbortSignal.timeout(12000) });
+          const current = live.ok ? theme(await live.text()) : undefined;
+          if (!current) throw Error('The existing ToolKitFree site is not available at its Netlify URL.');
+          if (current === theme(readFileSync('dist/index.html', 'utf8'))) {
+            appendFileSync(process.env.GITHUB_OUTPUT, 'already_updated=true\n');
+            console.log('NETLIFY_LIGHT_ALREADY_LIVE=true');
+            process.exit(0);
+          }
+
+          const cli = join(process.env.RUNNER_TEMP, 'toolkitfree-netlify-cli/node_modules/.bin/netlify');
+          const result = spawnSync(cli, ['login', '--request', 'Publish the tested ToolKitFree light-mode update to ' + process.env.SITE_NAME, '--json'], {
+            encoding: 'utf8', timeout: 30000, maxBuffer: 4 * 1024 * 1024,
+          });
+          if (result.status !== 0) throw Error('Netlify could not create an authorization request.');
+          const ticket = JSON.parse(result.stdout.trim());
+          const url = new URL(ticket.url);
+          if (url.origin !== 'https://app.netlify.com' || url.pathname !== '/authorize' ||
+              url.searchParams.get('response_type') !== 'ticket' || url.searchParams.get('ticket') !== ticket.ticket_id ||
+              !/^[A-Za-z0-9_-]{16,100}$/.test(ticket.ticket_id)) {
+            throw Error('Netlify returned an unexpected authorization request.');
+          }
+
+          const receiver = createPublicKey({ key: Buffer.from(process.env.AUTH_PUBLIC_KEY, 'base64'), format: 'der', type: 'spki' });
+          const sender = generateKeyPairSync('x25519');
+          const secret = diffieHellman({ privateKey: sender.privateKey, publicKey: receiver });
+          const key = Buffer.from(hkdfSync('sha256', secret, Buffer.alloc(0), 'toolkitfree-netlify-auth-v1', 32));
+          const iv = randomBytes(12);
+          const cipher = createCipheriv('aes-256-gcm', key, iv);
+          const sealed = Buffer.concat([
+            sender.publicKey.export({ format: 'der', type: 'spki' }), iv,
+            Buffer.concat([cipher.update(ticket.ticket_id, 'utf8'), cipher.final()]), cipher.getAuthTag(),
+          ]).toString('base64url');
+
+          // The repository can see only ciphertext. The ticket stays in this runner.
+          const name = 'netlify-auth-' + sealed;
+          writeFileSync(join(process.env.RUNNER_TEMP, 'toolkitfree-netlify-ticket'), ticket.ticket_id, { mode: 0o600 });
+          writeFileSync(join(process.env.RUNNER_TEMP, 'toolkitfree-netlify-ready.txt'), 'The verified build is ready for account authorization.\n');
+          appendFileSync(process.env.GITHUB_OUTPUT, 'artifact_name=' + name + '\n');
+          NODE
+
+      - name: Make the encrypted authorization request available
+        if: steps.auth.outputs.artifact_name != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.auth.outputs.artifact_name }}
+          path: ${{ runner.temp }}/toolkitfree-netlify-ready.txt
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Wait for approval and publish to the existing site
+        if: steps.auth.outputs.artifact_name != ''
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, unlinkSync } from 'node:fs';
+          import { join } from 'node:path';
+          import { spawnSync } from 'node:child_process';
+
+          const cli = join(process.env.RUNNER_TEMP, 'toolkitfree-netlify-cli/node_modules/.bin/netlify');
+          const ticketFile = join(process.env.RUNNER_TEMP, 'toolkitfree-netlify-ticket');
+          const ticket = readFileSync(ticketFile, 'utf8').trim();
+          const run = (args, timeout = 30000) => spawnSync(cli, args, { encoding: 'utf8', timeout, maxBuffer: 8 * 1024 * 1024 });
+          const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+          try {
+            const deadline = Date.now() + 8 * 60 * 1000;
+            let authorized = false;
+            while (Date.now() < deadline) {
+              const check = run(['login', '--check', ticket, '--json']);
+              if (check.status === 0) {
+                let result;
+                try { result = JSON.parse(check.stdout.trim()); } catch {}
+                if (result?.status === 'authorized') { authorized = true; break; }
+                if (result?.status === 'denied') throw Error('The Netlify authorization request expired or was denied.');
+              }
+              await pause(12000);
+            }
+            if (!authorized) throw Error('Netlify approval was not received within the authorization window.');
+
+            const deploy = run(['deploy', '--prod', '--no-build', '--dir=dist', '--site', process.env.SITE_NAME, '--json', '--timeout=180'], 240000);
+            if (deploy.status !== 0) {
+              throw Error('Netlify could not publish to this project. Check that the authorized account owns the existing ToolKitFree site.');
+            }
+
+            const expected = [...readFileSync('dist/index.html', 'utf8').matchAll(/<script>([\s\S]*?)<\/script>/g)]
+              .find(m => m[1].includes('tkf-theme'))?.[1].trim();
+            if (!expected || expected.includes('prefers-color-scheme')) throw Error('The built page does not contain the tested light-mode default.');
+            for (let attempt = 0; attempt < 6; attempt++) {
+              try {
+                const response = await fetch(process.env.SITE_URL + '/?theme-check=' + process.env.GITHUB_SHA, { signal: AbortSignal.timeout(10000) });
+                if (response.ok && (await response.text()).includes(expected)) {
+                  console.log('NETLIFY_LIGHT_VERIFIED=true');
+                  process.exitCode = 0;
+                  break;
+                }
+              } catch {}
+              if (attempt === 5) throw Error('The new light-mode build was not visible at the production URL.');
+              await pause(5000);
+            }
+          } finally {
+            unlinkSync(ticketFile);
+          }
+          NODE

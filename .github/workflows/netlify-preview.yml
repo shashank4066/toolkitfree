@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   publish:
-    if: github.repository == 'shashank4066/toolkitfree' && github.event.before == '44da60550bf4b08d86744635fbb056cd516efb04'
+    if: github.repository == 'shashank4066/toolkitfree' && github.event.before == 'e9c39d0b1d9bf1920e7f2ad26dc961c14ba18dbf'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -81,17 +81,19 @@ jobs:
             throw new Error('Netlify did not return the expected deployment information.');
           }
 
-          const live = new URL(result.site_url);
-          const claim = new URL(result.claim_url);
-          if (live.protocol !== 'https:' || !live.hostname.endsWith('.netlify.app') ||
-              claim.origin !== 'https://app.netlify.com' || !claim.pathname.startsWith('/drop/') ||
-              !claim.hash.startsWith('#drop_token=')) {
-            throw new Error('Netlify returned an unexpected URL.');
-          }
-          console.log('NETLIFY_LIVE_URL=' + live.origin);
+          // Preserve the provider's claim details before checking the public hostname.
           console.log('NETLIFY_CLAIM_CIPHER=' + seal(JSON.stringify({
-            claimUrl: claim.href, siteUrl: live.origin, password: result.password,
+            claimUrl: result.claim_url, reportedSiteUrl: result.site_url,
+            password: result.password, createdAt: new Date().toISOString(),
           })));
+          const claim = new URL(result.claim_url);
+          const subdomain = claim.pathname.match(/^\/drop\/([a-z0-9][a-z0-9-]*)\/?$/i)?.[1];
+          if (claim.origin !== 'https://app.netlify.com' || claim.username || claim.password ||
+              !subdomain || !claim.hash.startsWith('#drop_token=')) {
+            throw new Error('Netlify returned an unexpected claim address.');
+          }
+          const live = new URL('https://' + subdomain + '.netlify.app');
+          console.log('NETLIFY_LIVE_URL=' + live.origin);
 
           const built = readFileSync('dist/index.html', 'utf8');
           const script = built.match(/src="(\/assets\/index-[^"]+\.js)"/)?.[1];
@@ -103,7 +105,7 @@ jobs:
                 fetch(live.origin + '/pdf-merge', { signal: AbortSignal.timeout(10000) }),
               ]);
               if (home.ok && tool.ok && (await home.text()).includes(script) &&
-                  (await tool.text()).includes('Merge PDF')) {
+                  (await tool.text()).includes('<h1>Merge PDF</h1>')) {
                 console.log('NETLIFY_VERIFIED=true');
                 process.exit(0);
               }

@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   publish:
-    if: github.repository == 'shashank4066/toolkitfree' && github.event.before == 'b4a279d38f488fa7949c0b73b7bf71288a5d5693'
+    if: github.repository == 'shashank4066/toolkitfree' && github.event.before == '44da60550bf4b08d86744635fbb056cd516efb04'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -32,7 +32,8 @@ jobs:
       - name: Publish and verify the claimable site
         env:
           NETLIFY_TELEMETRY_DISABLED: "1"
-          CLAIM_            -----BEGIN PUBLIC KEY-----
+          CLAIM_PUBLIC_KEY: |
+            -----BEGIN PUBLIC KEY-----
             MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAsmSnHzMtuP4FZxY8+RLV
             PeA0wjb+knV1RxrVOfBq5Akz9RFMs90ecjeCrZXgqMxf56giRU2fAmR0zJ/ILQ/f
             rwl/zfhQTgoRJdu4HRBajp97efD4Z9shPZK4hHMOqhek+fEv8NokRCL318JnmT4Z
@@ -42,8 +43,7 @@ jobs:
             x5j4/FyrNE6gHsMNWaBAQ0iHU8sZT0u4+LOsY84Z/XaLuWNrQWfbvVJZD3JaWfbU
             148Zh3E7YkmRaXmWfYmdsLBrokn97OnVmD+VJh9e/+2Jm6B75i0YhjZ4ADlA2q6Z
             Dmz0K2ndT+1Po4TCqCbOthnp1qQDGkF0wXE3hcmIittZAgMBAAE=
-            -----END PUBLIC KEY-----: |
-PUBLIC_KEY
+            -----END PUBLIC KEY-----
         run: |
           node --input-type=module <<'NODE'
           import { spawnSync } from 'node:child_process';

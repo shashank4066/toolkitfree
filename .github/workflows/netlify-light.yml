@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   deploy:
-    if: github.repository == 'shashank4066/toolkitfree' && github.event.before == '416f4d4ede0d1e4ee7ed45cc5132aa51de129f3b'
+    if: github.repository == 'shashank4066/toolkitfree' && github.event.before == 'd46fcbbeb5aa82817fa0d5e04bef0de3a2817a9f'
     runs-on: ubuntu-latest
     timeout-minutes: 14
     env:
@@ -26,7 +26,6 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22.19.0"
-          cache: npm
 
       - name: Build the production site
         env:
@@ -51,9 +50,14 @@ jobs:
           function theme(html) {
             return [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].find(m => m[1].includes('tkf-theme'))?.[1].trim();
           }
-          const live = await fetch(process.env.SITE_URL + '/?check=light-default', { signal: AbortSignal.timeout(12000) });
-          const current = live.ok ? theme(await live.text()) : undefined;
-          if (!current) throw Error('The existing ToolKitFree site is not available at its Netlify URL.');
+          let current;
+          try {
+            const live = await fetch(process.env.SITE_URL + '/', { signal: AbortSignal.timeout(12000) });
+            current = live.ok ? theme(await live.text()) : undefined;
+            console.log('NETLIFY_EXISTING_HTTP=' + live.status + ' THEME_PRESENT=' + Boolean(current));
+          } catch {
+            console.log('NETLIFY_EXISTING_HTTP=unreachable');
+          }
           if (current === theme(readFileSync('dist/index.html', 'utf8'))) {
             appendFileSync(process.env.GITHUB_OUTPUT, 'already_updated=true\n');
             console.log('NETLIFY_LIGHT_ALREADY_LIVE=true');
@@ -65,7 +69,9 @@ jobs:
             encoding: 'utf8', timeout: 30000, maxBuffer: 4 * 1024 * 1024,
           });
           if (result.status !== 0) throw Error('Netlify could not create an authorization request.');
-          const ticket = JSON.parse(result.stdout.trim());
+          const output = result.stdout.trim();
+          const jsonStart = output.lastIndexOf('\n{') + 1;
+          const ticket = JSON.parse(output.slice(jsonStart));
           const url = new URL(ticket.url);
           if (url.origin !== 'https://app.netlify.com' || url.pathname !== '/authorize' ||
               url.searchParams.get('response_type') !== 'ticket' || url.searchParams.get('ticket') !== ticket.ticket_id ||

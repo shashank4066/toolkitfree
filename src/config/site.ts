@@ -2,7 +2,7 @@
 export const site = {
   name: 'ToolKitFree',
   tagline: 'Every tool you need. 100% free. No signup.',
-  origin: processEnv('VITE_SITE_URL') || 'https://toolkitfree-shashank-2026.immensedrake1.chatgpt.site',
+  origin: processEnv('VITE_SITE_URL') || 'https://toolkitfree.online',
   contactEmail: processEnv('VITE_CONTACT_EMAIL') || '',
   supportUrl: processEnv('VITE_SUPPORT_URL') || '',
   adsEnabled: processEnv('VITE_ADS_ENABLED') === 'true',

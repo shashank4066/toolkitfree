@@ -30,7 +30,20 @@ describe('QR payloads',()=>{
 });
 describe('catalog and search metadata',()=>{
   it('has unique slugs and valid categories',()=>{expect(new Set(tools.map(t=>t.slug)).size).toBe(tools.length);for(const tool of tools){expect(categories.some(c=>c.id===tool.category)).toBe(true);expect(tool.component).toBeTruthy();expect(metadata('/'+tool.slug).title).toContain(tool.seoTitle||tool.name);}});
-  it('makes popular tools, aliases and structured data discoverable',()=>{expect(popularSlugs.every(slug=>tools.some(t=>t.slug===slug))).toBe(true);expect(searchTools('50kb').some(t=>t.slug==='image-target-size')).toBe(true);expect(schemas('/pdf-merge').length).toBe(2);});
+  it('makes popular tools, aliases and structured data discoverable',()=>{
+    expect(popularSlugs.every(slug=>tools.some(t=>t.slug===slug))).toBe(true);
+    expect(searchTools('50kb').some(t=>t.slug==='image-target-size')).toBe(true);
+    expect(schemas('/pdf-merge/').map(schema=>schema['@type'])).toEqual(['WebApplication','BreadcrumbList']);
+    expect(schemas('/').map(schema=>schema['@type'])).toEqual(['WebSite']);
+  });
+  it('uses canonical directory URLs and omits a canonical for missing pages',()=>{
+    const home = metadata('/');
+    expect(new URL(home.url!).pathname).toBe('/');
+    expect(metadata('/image-dimensions-size')).toEqual(metadata('/image-dimensions-size/'));
+    expect(new URL(metadata('/image-dimensions-size/').url!).pathname).toBe('/image-dimensions-size/');
+    expect(metadata('/does-not-exist/').url).toBeUndefined();
+    expect(schemas('/does-not-exist/')).toEqual([]);
+  });
   it('correctly maps user search queries to direct tools and parameters',()=>{
     expect(getDirectToolUrl('online image compressor to 10 kb')).toBe('/image-target-size?target=10&unit=KB');
     expect(getDirectToolUrl('online pdf merger')).toBe('/pdf-merge');

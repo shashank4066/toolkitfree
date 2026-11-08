@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { Moon, Sun, Menu, X, ArrowUpRight, Heart, Search } from 'lucide-react';
 import { categories, tools } from '../config/tools';
 import { site } from '../config/site';
+import { categoryPath, normalizePagePath } from '../lib/seo';
 import { Button } from './ui/button';
 
 export function Logo() {
@@ -28,10 +29,11 @@ export function Header() {
   const [dark, setDark] = useState(false);
   const [mobile, setMobile] = useState(false);
   const location = useLocation();
-  const isDirectory = location.pathname === '/all-tools';
+  const pathname = normalizePagePath(location.pathname);
+  const isDirectory = pathname === '/all-tools';
   const selectedCategory = isDirectory
     ? new URLSearchParams(location.search).get('category')
-    : tools.find(tool => '/' + tool.slug === location.pathname)?.category;
+    : tools.find(tool => '/' + tool.slug === pathname)?.category;
 
   useEffect(() => {
     setDark(document.documentElement.classList.contains('dark'));
@@ -53,7 +55,7 @@ export function Header() {
           <Logo />
           <nav id="primary-navigation" className={mobile ? 'primary-nav mobile-open' : 'primary-nav'} aria-label="Main navigation">
             <Link
-              to="/all-tools"
+              to="/all-tools/"
               className={isDirectory && !selectedCategory ? 'nav-item active' : 'nav-item'}
               aria-current={isDirectory && !selectedCategory ? 'page' : undefined}
               onClick={() => setMobile(false)}
@@ -64,7 +66,7 @@ export function Header() {
               <Link
                 onClick={() => setMobile(false)}
                 key={category.id}
-                to={'/all-tools?category=' + category.id}
+                to={categoryPath(category.id)}
                 className={selectedCategory === category.id ? 'nav-item active' : 'nav-item'}
                 aria-current={isDirectory && selectedCategory === category.id ? 'page' : undefined}
               >
@@ -73,7 +75,7 @@ export function Header() {
             ))}
           </nav>
           <div className="header-actions">
-            <Link to="/all-tools" className="icon-link" aria-label="Search all tools">
+            <Link to="/all-tools/" className="icon-link" aria-label="Search all tools">
               <Search size={18} />
             </Link>
             <Button variant="ghost" size="icon" aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'} onClick={toggle}>
@@ -101,9 +103,9 @@ export function Footer() {
           <div className="footer-column" key={category.id}>
             <h3>{category.name}</h3>
             {tools.filter(tool => tool.category === category.id).slice(0, 4).map(tool => (
-              <Link key={tool.slug} to={'/' + tool.slug}>{tool.name}</Link>
+              <Link key={tool.slug} to={'/' + tool.slug + '/'}>{tool.name}</Link>
             ))}
-            <Link to={'/all-tools?category=' + category.id} className="view-all-link">
+            <Link to={categoryPath(category.id)} className="view-all-link">
               View all <ArrowUpRight size={12} />
             </Link>
           </div>
@@ -112,13 +114,13 @@ export function Footer() {
       <div className="container footer-bottom">
         <p>© {new Date().getFullYear()} {site.name}</p>
         <div className="footer-links">
-          <Link to="/about">About</Link>
-          <Link to="/privacy">Privacy Policy</Link>
-          <Link to="/terms">Terms</Link>
-          <Link to="/contact">Contact</Link>
+          <Link to="/about/">About</Link>
+          <Link to="/privacy/">Privacy Policy</Link>
+          <Link to="/terms/">Terms</Link>
+          <Link to="/contact/">Contact</Link>
           {site.supportUrl ? (
             <a href={site.supportUrl} target="_blank" rel="noopener noreferrer"><Heart size={12} /> Support us</a>
-          ) : <Link to="/about#support">Support us</Link>}
+          ) : <Link to="/about/#support">Support us</Link>}
         </div>
       </div>
     </footer>

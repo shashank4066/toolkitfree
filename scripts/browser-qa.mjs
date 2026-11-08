@@ -125,7 +125,7 @@ await test('Clipboard paste adds to the current PDF batch once', async () => {
 await test('Quick task presets stay set after reading the image', async () => {
   await goto('');
   await page.getByRole('link', { name: 'Compress an image to 50 KB', exact: true }).click();
-  await page.waitForURL('**/image-target-size?target=50&unit=KB');
+  await page.waitForURL('**/image-target-size/?target=50&unit=KB');
   await upload(imagePath);
   await page.getByAltText('Original image preview').waitFor();
   assert.equal(await page.getByLabel('Target file size', { exact: true }).inputValue(), '50');

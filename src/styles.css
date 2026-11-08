@@ -1536,6 +1536,8 @@ input[type=checkbox] {
   margin: 44px auto 0;
 }
 .tool-info h2 { font-size: 21px; margin-bottom: 18px; }
+.tool-example { margin-bottom: 32px; }
+.tool-example p { max-width: 72ch; color: var(--muted); font-size: 14px; line-height: 1.65; }
 .info-columns {
   display: grid;
   grid-template-columns: 1fr 1fr;

@@ -1,5 +1,45 @@
 import { site } from '../config/site';
-import { commonFaq, tools, type Tool } from '../config/tools';
+import { categories, commonFaq, tools, type CategoryId, type Tool } from '../config/tools';
+import { toolGuides } from '../config/tool-guides';
+
+const pages: Record<string, { title: string; description: string } | undefined> = {
+  '/': {
+    title: 'Free PDF, Image & Developer Tools',
+    description: 'Merge PDFs, compress photos to a file size limit, format JSON, and make QR codes for free. Tools run in your browser without uploads or signups.',
+  },
+  '/all-tools': {
+    title: 'Browse Free PDF, Image, Text & Developer Tools',
+    description: 'Search and filter free tools for PDF editing, photo resizing, text cleanup, code formatting, QR codes, and everyday calculations.',
+  },
+  '/about': {
+    title: 'About',
+    description: 'Learn how ' + site.name + ' offers free PDF, image, text, and developer tools while keeping your files and inputs on your device.',
+  },
+  '/privacy': {
+    title: 'Privacy Policy',
+    description: 'Learn how ' + site.name + ' handles local file processing, browser storage, analytics, and the information your browser sends to the host.',
+  },
+  '/terms': {
+    title: 'Terms of Use',
+    description: 'Read the terms for using the free PDF, image, text, and developer tools, including practical limits and responsibilities for your files.',
+  },
+  '/contact': {
+    title: 'Contact',
+    description: 'Report a bug or suggest a tool for ' + site.name + '. Describe the tool and browser so the issue can be reproduced.',
+  },
+};
+
+export function normalizePagePath(pathname: string) {
+  return pathname.replace(/\/+$/, '') || '/';
+}
+
+export function categoryPath(category: CategoryId) {
+  return '/all-tools/?category=' + category;
+}
+
+function pageUrl(path: string) {
+  return site.origin.replace(/\/+$/, '') + (path === '/' ? '/' : path + '/');
+}
 
 export function toolFaq(tool: Tool) {
   const specificFaqs: Record<string, { question: string; answer: string }[]> = {
@@ -63,79 +103,54 @@ export function toolFaq(tool: Tool) {
   ];
 }
 
-export function metadata(path: string) {
-  const tool = tools.find(t => '/' + t.slug === path);
-  const names: Record<string, string> = {
-    '/all-tools': 'All Free Online Tools',
-    '/about': 'About',
-    '/privacy': 'Privacy Policy',
-    '/terms': 'Terms of Use',
-    '/contact': 'Contact'
-  };
-
+export function metadata(pathname: string) {
+  const path = normalizePagePath(pathname);
+  const tool = tools.find(tool => '/' + tool.slug === path);
+  const page = pages[path];
   const title = tool
-    ? (tool.seoTitle || (tool.heading ? tool.heading : tool.name + ' Online Free')) + ' | ' + site.name
-    : path === '/'
-    ? site.name + ' — Free Online Tools for Everything (PDF, Image, Text, Dev)'
-    : (names[path] || 'Page Not Found') + ' | ' + site.name;
-
+    ? tool.seoTitle ?? tool.heading ?? tool.name + ' Online Free'
+    : page?.title ?? 'Page Not Found';
   const description = tool
-    ? tool.description + ' Free to use in your browser. No signup or uploads.'
-    : 'Free tools for PDFs, images, text, and code. Merge files, resize photos, format JSON, and more. Your browser processes files on your device.';
-
-  const keywords = tool
-    ? tool.keywords.join(', ') + ', free online tools, ' + site.name
-    : 'free online tools, pdf merger, compress image to 10kb, image resize to 20kb, json formatter, qr code generator, client side tools';
+    ? toolGuides[tool.slug]?.description ?? tool.description + ' Free to use in your browser with no signup.'
+    : page?.description ?? 'Find the PDF, image, text, or developer tool you were looking for in the tool directory.';
 
   return {
-    title,
+    title: title + ' | ' + site.name,
     description,
-    keywords,
-    url: site.origin.replace(/\/$/, '') + (path === '/' ? '' : path),
-    tool
+    url: tool || page ? pageUrl(path) : undefined,
+    tool,
   };
 }
 
-export function schemas(path: string) {
-  const { tool, url, description } = metadata(path);
-  const app = {
-    '@context': 'https://schema.org',
-    '@type': tool ? 'WebApplication' : 'WebSite',
-    name: tool ? (tool.heading || tool.name) : site.name,
-    url,
-    description,
-    ...(tool
-      ? {
-          applicationCategory: 'UtilitiesApplication',
-          operatingSystem: 'Any',
-          browserRequirements: 'Requires a modern browser with JavaScript',
-          offers: {
-            '@type': 'Offer',
-            price: '0',
-            priceCurrency: 'USD'
-          }
-        }
-      : {})
-  };
+export function schemas(pathname: string) {
+  const { tool, url, description } = metadata(pathname);
+  if (!url) return [];
+  if (normalizePagePath(pathname) === '/') {
+    return [{ '@context': 'https://schema.org', '@type': 'WebSite', name: site.name, url, description }];
+  }
+  if (!tool) return [];
 
-  const faq = tool ? toolFaq(tool) : path === '/' ? commonFaq : [];
+  const category = categories.find(category => category.id === tool.category)!;
   return [
-    app,
-    ...(faq.length
-      ? [
-          {
-            '@context': 'https://schema.org',
-            '@type': 'FAQPage',
-            mainEntity: faq.map(item => ({
-              '@type': 'Question',
-              name: item.question,
-              acceptedAnswer: {
-                '@type': 'Answer',
-                text: item.answer
-              }
-            }))
-          }
-        ]
-      : [])
+    {
+      '@context': 'https://schema.org',
+      '@type': 'WebApplication',
+      name: toolGuides[tool.slug]?.heading ?? tool.name,
+      url,
+      description,
+      applicationCategory: 'UtilitiesApplication',
+      operatingSystem: 'Any',
+      browserRequirements: 'Requires a modern browser with JavaScript',
+      offers: { '@type': 'Offer', price: 0, priceCurrency: 'USD' },
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'Home', item: pageUrl('/') },
+        { '@type': 'ListItem', position: 2, name: category.name, item: new URL(categoryPath(category.id), url).href },
+        { '@type': 'ListItem', position: 3, name: tool.name, item: url },
+      ],
+    },
   ];
 }

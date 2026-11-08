@@ -1,6 +1,7 @@
 import { ArrowRight, Check, Download, ShieldCheck, SlidersHorizontal, Upload } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { categories, commonFaq, popularSlugs, tools } from '../config/tools';
+import { categoryPath } from '../lib/seo';
 import { FAQ } from '../components/FAQ';
 import { Icon } from '../components/Icon';
 import { SearchBar } from '../components/SearchBar';
@@ -8,9 +9,10 @@ import { AdSlot } from '../components/SiteShell';
 import { ToolCard } from '../components/ToolCard';
 
 const quickTasks = [
-  { title: 'Compress an image to 50 KB', path: '/image-target-size?target=50&unit=KB', category: 'image', icon: 'Target' },
-  { title: 'Combine multiple PDFs', path: '/pdf-merge', category: 'pdf', icon: 'Files' },
-  { title: 'Make a QR code for a link', path: '/qr-generator', category: 'utility', icon: 'QrCode' },
+  { title: 'Compress an image to 50 KB', path: '/image-target-size/?target=50&unit=KB', category: 'image', icon: 'Target' },
+  { title: 'Resize a photo by cm and KB', path: '/image-dimensions-size/', category: 'image', icon: 'Ruler' },
+  { title: 'Combine multiple PDFs', path: '/pdf-merge/', category: 'pdf', icon: 'Files' },
+  { title: 'Make a QR code for a link', path: '/qr-generator/', category: 'utility', icon: 'QrCode' },
 ];
 
 const steps = [
@@ -25,9 +27,9 @@ export default function Home() {
       <section className="hero" aria-labelledby="home-title">
         <div className="container hero-content">
           <div className="hero-intro">
-            <h1 id="home-title">Free online tools</h1>
+            <h1 id="home-title">Free PDF, image and developer tools</h1>
             <p className="hero-subtitle">
-              Merge PDFs, resize images, format JSON, and handle everyday file tasks in your browser.
+              Merge PDFs, resize photos to a file size limit, format JSON, and make QR codes in your browser.
             </p>
             <SearchBar />
             <ul className="trust-row" aria-label="Tool features">
@@ -58,7 +60,7 @@ export default function Home() {
         <section className="section popular-section" aria-labelledby="popular-title">
           <div className="section-heading">
             <h2 id="popular-title">Popular tools</h2>
-            <Link to="/all-tools" className="text-link">
+            <Link to="/all-tools/" className="text-link">
               All {tools.length} tools <ArrowRight size={16} aria-hidden="true" />
             </Link>
           </div>
@@ -87,12 +89,12 @@ export default function Home() {
                   </div>
                   <ul className="category-tool-links">
                     {categoryTools.slice(0, 3).map(tool => (
-                      <li key={tool.slug}><Link to={'/' + tool.slug}>{tool.name}</Link></li>
+                      <li key={tool.slug}><Link to={'/' + tool.slug + '/'}>{tool.name}</Link></li>
                     ))}
                   </ul>
                   <Link
                     className="text-link category-all"
-                    to={'/all-tools?category=' + category.id}
+                    to={categoryPath(category.id)}
                     aria-label={'View all ' + categoryTools.length + ' ' + category.name}
                   >
                     View all {categoryTools.length} <ArrowRight size={15} aria-hidden="true" />
@@ -109,7 +111,7 @@ export default function Home() {
             <h2 id="privacy-title">Files are processed on your device</h2>
             <p>Use the tools for free on your phone or computer. Your browser handles the work without uploading your files.</p>
           </div>
-          <Link to="/privacy">Privacy policy <ArrowRight size={15} aria-hidden="true" /></Link>
+          <Link to="/privacy/">Privacy policy <ArrowRight size={15} aria-hidden="true" /></Link>
         </section>
 
         <section className="section how-section" aria-labelledby="how-title">
@@ -128,7 +130,7 @@ export default function Home() {
         <section className="section faq-section" aria-labelledby="faq-title">
           <div>
             <h2 id="faq-title">Frequently asked questions</h2>
-            <Link className="text-link" to="/contact">Contact us <ArrowRight size={15} aria-hidden="true" /></Link>
+            <Link className="text-link" to="/contact/">Contact us <ArrowRight size={15} aria-hidden="true" /></Link>
           </div>
           <FAQ items={commonFaq} />
         </section>

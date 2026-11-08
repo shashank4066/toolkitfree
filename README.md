@@ -22,7 +22,7 @@ npm run build
 npm run preview
 ~~~
 
-The production output is **dist/**. Each tool has prerendered HTML, unique title and description, canonical and Open Graph metadata, WebApplication and FAQPage structured data, and a generated sitemap.
+The production output is **dist/**. Each tool has prerendered HTML, a unique title and description, canonical and Open Graph metadata, and WebApplication and breadcrumb markup. The sitemap lists the canonical URLs.
 
 For browser regression checks, install Chromium once with **npx playwright install chromium**, start **npm run preview** in a second terminal, then run **npm run qa**. Test results and fixtures go in **.qa/**.
 
@@ -125,11 +125,11 @@ Import the repository. Build: npm run build. Output: dist. Node: 22 or newer. Se
 
 ### Netlify
 
-Import the repository; netlify.toml defines build and output. Add environment variables. Generated _redirects provides deep-link access; existing prerendered files take priority.
+Import the repository and set the environment variables. The netlify.toml file defines the build and output directory. Netlify serves the prerendered tool pages directly and uses the generated 404.html for missing paths.
 
 ### Cloudflare Pages
 
-Use the Vite preset, npm run build, output dist, and NODE_VERSION=22. Set VITE_SITE_URL. Generated _headers, _redirects and static pages require no backend or bindings.
+Use the Vite preset, npm run build, output dist, and NODE_VERSION=22. Set VITE_SITE_URL. The generated headers and static pages require no backend or bindings.
 
 ### Public launch
 

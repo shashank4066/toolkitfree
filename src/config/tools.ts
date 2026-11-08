@@ -36,7 +36,7 @@ export const tools: Tool[] = [
       'merge pdf', 'join pdf', 'pdf joiner', 'pdf combiner online', 'merge multiple pdfs into one',
       'merge pdf pages', 'free pdf binder'
     ],
-    seoTitle: 'Merge PDF Online Free — Fast & Private PDF Merger',
+    seoTitle: 'Merge PDF Files Without Uploading',
     popular: true
   },
   {
@@ -48,7 +48,7 @@ export const tools: Tool[] = [
     description: 'Save a page range or split a PDF into several files.',
     component: 'pdf/PdfTools',
     keywords: ['split pdf', 'extract pdf pages', 'pdf splitter online', 'separate pdf pages', 'cut pdf pages', 'split pdf by page range'],
-    seoTitle: 'Split PDF Online Free — Extract & Separate PDF Pages',
+    seoTitle: 'Split PDF by Page Range',
     popular: true
   },
   {
@@ -60,7 +60,7 @@ export const tools: Tool[] = [
     description: 'Reduce PDF size with a preset or a KB/MB target.',
     component: 'pdf/PdfTools',
     keywords: ['compress pdf under 200kb', 'reduce pdf size', 'compress pdf online free', 'shrink pdf', 'pdf compressor', 'compress pdf to 100kb', 'compress pdf to 500kb', 'compress pdf to 1mb'],
-    seoTitle: 'Compress PDF to 200KB, 500KB or 1MB Online Free',
+    seoTitle: 'Compress PDF to 200 KB, 500 KB or 1 MB',
     popular: true,
     note: 'Compression rebuilds pages as images. Selectable text, forms, links and signatures are not retained. Keep your original.'
   },
@@ -190,7 +190,7 @@ export const tools: Tool[] = [
       'reduce image size', 'compress jpg', 'compress png', 'compress webp', 'shrink image size',
       'compress image without losing quality', 'photo size reducer'
     ],
-    seoTitle: 'Compress Image Online Free — Fast Image Compressor (JPG, PNG, WebP)',
+    seoTitle: 'Batch Image Compressor for JPG, PNG & WebP',
     popular: true
   },
   {
@@ -208,7 +208,7 @@ export const tools: Tool[] = [
       'reduce photo size in kb', 'resize image to 50kb', 'compress image under 100kb', 'passport photo 50 kb',
       'government form photo 100 kb', 'signature compress to 10kb', 'signature compress to 20kb'
     ],
-    seoTitle: 'Compress Image to 10KB, 20KB, 50KB, 100KB Online Free',
+    seoTitle: 'Compress Image to 20 KB, 50 KB or 100 KB',
     popular: true
   },
   {
@@ -240,7 +240,7 @@ export const tools: Tool[] = [
       'resize photo for exam form', 'dimensions and file size together', 'resize photo to exact kb and cm',
       'signature resize 20kb', 'photo resize 20kb'
     ],
-    seoTitle: 'Resize Image to 20KB, 50KB Dimensions & File Size Online Free'
+    seoTitle: 'Resize Photo in CM and KB'
   },
   {
     slug: 'image-crop',

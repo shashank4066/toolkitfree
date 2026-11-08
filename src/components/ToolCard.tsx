@@ -5,7 +5,7 @@ import { Icon } from './Icon';
 
 export function ToolCard({ tool }: { tool: Tool }) {
   return (
-    <Link to={'/' + tool.slug} className={'tool-card category-' + tool.category}>
+    <Link to={'/' + tool.slug + '/'} className={'tool-card category-' + tool.category}>
       <span className="tool-icon">
         <Icon name={tool.icon} size={20} strokeWidth={1.75} aria-hidden="true" />
       </span>

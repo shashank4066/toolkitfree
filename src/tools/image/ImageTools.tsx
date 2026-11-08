@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Cropper, { type Area } from 'react-easy-crop';
 import { ArrowRight, SlidersHorizontal } from 'lucide-react';
@@ -17,14 +17,20 @@ type ImageResult={blob:Blob;width:number;height:number;met:boolean};
 export default function ImageTools({tool}:{tool:Tool}) {
   const [searchParams] = useSearchParams();
   const slug=tool.slug,isResize=['image-resizer','image-dimensions-size'].includes(slug),isCrop=slug==='image-crop',isCompress=['image-compressor','image-target-size','image-dimensions-size'].includes(slug);
-  const paramTarget = Number(searchParams.get('target') || searchParams.get('kb') || searchParams.get('size'));
+  const paramTarget = Number(searchParams.get('target') || searchParams.get('kb') || searchParams.get('mb') || searchParams.get('size'));
   const paramUnit = (searchParams.get('unit') || (searchParams.get('mb') ? 'MB' : 'KB')).toUpperCase() === 'MB' ? 'MB' : 'KB';
   const paramWidth = Number(searchParams.get('width') || searchParams.get('w'));
   const paramHeight = Number(searchParams.get('height') || searchParams.get('h'));
   const paramUnits = searchParams.get('units') || 'px';
+  const paramFormat = searchParams.get('format');
+  const firstImage = useRef(true);
 
   const [files,setFiles]=useState<File[]>([]),[outputs,setOutputs]=useState<OutputFile[]>([]),[preview,setPreview]=useState<Blob>(),[original,setOriginal]=useState({width:0,height:0});
-  const [quality,setQuality]=useState(85),[format,setFormat]=useState(searchParams.get('format')||'jpg');
+  const [quality,setQuality]=useState(85),[format,setFormat]=useState(
+    paramFormat && ['jpg', 'png', 'webp', ...(slug === 'image-converter' ? ['avif'] : [])].includes(paramFormat)
+      ? paramFormat
+      : 'jpg',
+  );
   const [targetOn,setTargetOn]=useState(paramTarget > 0 || (slug!=='image-compressor'&&slug!=='image-dimensions-size'));
   const [target,setTarget]=useState(paramTarget > 0 ? paramTarget : 100);
   const [sizeUnit,setSizeUnit]=useState(paramUnit);
@@ -34,7 +40,49 @@ export default function ImageTools({tool}:{tool:Tool}) {
   const [dpi,setDpi]=useState(300),[percent,setPercent]=useState(50),[locked,setLocked]=useState(true),[rotation,setRotation]=useState(0),[flipX,setFlipX]=useState(false),[flipY,setFlipY]=useState(false);
   const [crop,setCrop]=useState({x:0,y:0}),[zoom,setZoom]=useState(1),[aspect,setAspect]=useState('1'),[cropArea,setCropArea]=useState<Area>(),[freeCrop,setFreeCrop]=useState({x:0,y:0,width:100,height:100});
   const task=useTask(),url=useObjectUrl(preview),afterUrl=useObjectUrl(outputs[0]?.blob);
-  useEffect(()=>{let active=true;setOutputs([]);setPreview(undefined);if(!files[0])return;prepareImage(files[0]).then(async blob=>{const dims=await imageDimensions(blob);if(active){setPreview(blob);setOriginal(dims);setWidth(dims.width);setHeight(dims.height);setUnits('px');setCrop({x:0,y:0});setZoom(1);if(slug==='image-remove-metadata'||slug==='image-resizer'||isCrop||slug==='image-rotate')setFormat(detectFormat(files[0]));}}).catch(err=>{if(active)task.setError(err.message);});return()=>{active=false;};},[files[0],slug,isCrop]);
+  const file = files[0];
+  useEffect(() => {
+    let active = true;
+    setPreview(undefined);
+    if (!file) {
+      firstImage.current = true;
+      return;
+    }
+
+    async function loadPreview(source: File) {
+      try {
+        const blob = await prepareImage(source);
+        const dimensions = await imageDimensions(blob);
+        if (!active) return;
+
+        setOriginal(dimensions);
+        setCrop({ x: 0, y: 0 });
+        setZoom(1);
+        if (firstImage.current) {
+          firstImage.current = false;
+          if (paramUnits === 'cm') {
+            setWidth(paramWidth > 0 ? paramWidth : 3.5);
+            setHeight(paramHeight > 0 ? paramHeight : 4.5);
+            setLocked(false);
+          } else {
+            const ratio = dimensions.width / dimensions.height;
+            setWidth(paramWidth > 0 ? paramWidth : paramHeight > 0 ? Math.round(paramHeight * ratio) : dimensions.width);
+            setHeight(paramHeight > 0 ? paramHeight : paramWidth > 0 ? Math.round(paramWidth / ratio) : dimensions.height);
+            setLocked(!(paramWidth > 0 && paramHeight > 0));
+          }
+          if (!paramFormat && (isResize || isCrop || slug === 'image-remove-metadata' || slug === 'image-rotate')) {
+            setFormat(detectFormat(source));
+          }
+        }
+        setPreview(blob);
+      } catch (error) {
+        if (active) task.setError(error instanceof Error ? error.message : 'This image could not be opened.');
+      }
+    }
+
+    void loadPreview(file);
+    return () => { active = false; };
+  }, [file, isCrop, isResize, paramFormat, paramHeight, paramUnits, paramWidth, slug]);
   function addFiles(next:File[]){if(files.length+next.length>20){task.setError('Choose up to 20 images per batch. Start another batch when you are done.');return;}setFiles(isCrop?[next[0]]:[...files,...next]);task.setError('');setOutputs([]);}
   function changeWidth(value:number){setWidth(value);if(locked&&original.width)setHeight(Number((value*original.height/original.width).toFixed(units==='cm'?2:0)));}
   function changeHeight(value:number){setHeight(value);if(locked&&original.height)setWidth(Number((value*original.width/original.height).toFixed(units==='cm'?2:0)));}
@@ -62,10 +110,41 @@ export default function ImageTools({tool}:{tool:Tool}) {
     {url&&isCrop&&aspect==='free'&&<><img className="image-preview" src={url} alt="Image to crop"/><p className="help-text">Set any crop rectangle using the position and dimensions controls. Values are percentages of the original image.</p></>}
     {url&&!isCrop&&!outputs.length&&<img className="image-preview" src={url} alt="Original image preview" style={slug==='image-rotate'?{transform:'none'}:undefined}/>}
     {url&&afterUrl&&<div className="before-after"><figure><img src={url} alt="Before processing"/><figcaption>Before · {original.width} × {original.height}</figcaption></figure><figure><img src={afterUrl} alt="After processing"/><figcaption>After · preview</figcaption></figure></div>}
-    </div>{files.length>0&&<div className="options-panel"><h3><SlidersHorizontal size={16}/>Make it yours</h3><fieldset disabled={task.busy} style={{border:0,padding:0,margin:0}}>
+    </div>{files.length>0&&<div className="options-panel"><h3><SlidersHorizontal size={16}/>Image settings</h3>{!preview && !task.error && <p className="help-text" role="status">Reading image…</p>}<fieldset disabled={task.busy || !preview} style={{border:0,padding:0,margin:0}}>
     <SelectField label="Output format" value={format} onChange={e=>setFormat(e.target.value)} options={[['jpg','JPG'],['png','PNG · lossless'],['webp','WebP'],...(slug==='image-converter'?[['avif','AVIF · if browser supports encoding'] as [string,string]]:[])]}/>
     {format!=='png'&&<RangeField label="Quality (%)" min={5} max={100} value={quality} onChange={e=>setQuality(Number(e.target.value))}/>}
-    {isCompress&&<>{slug==='image-compressor'&&<Checkbox label="Compress to a target size" checked={targetOn} onChange={e=>setTargetOn(e.target.checked)}/>}<div className="field-row"><NumberField label="Target file size" min={.001} step="any" disabled={!targetOn} value={target} onChange={e=>setTarget(Number(e.target.value))}/><SelectField label="Unit" disabled={!targetOn} value={sizeUnit} onChange={e=>setSizeUnit(e.target.value)} options={['KB','MB']}/></div><div className="chip-group">{[10,20,50,100,200,500,1000].map(n=><button type="button" key={n} className={'chip'+(target===n&&sizeUnit==='KB'?' active':'')} onClick={()=>{setTargetOn(true);setTarget(n);setSizeUnit('KB');}}>{n===1000?'1 MB':n+' KB'}</button>)}</div><p className="help-text" style={{marginBottom:16}}>10–20 KB: signatures & exams · 50 KB: passport · 100–200 KB: forms. 1 KB = 1,000 bytes. {slug==='image-dimensions-size'?'Dimensions stay fixed.':'Dimensions may shrink to reach your target.'}</p></>}
+    {isCompress && <>
+      {slug !== 'image-target-size' && (
+        <Checkbox label="Use a file size target" checked={targetOn} onChange={e => setTargetOn(e.target.checked)} />
+      )}
+      <div className="field-row">
+        <NumberField label="Target file size" min={.001} step="any" disabled={!targetOn} value={target} onChange={e => setTarget(Number(e.target.value))} />
+        <SelectField label="Unit" disabled={!targetOn} value={sizeUnit} onChange={e => setSizeUnit(e.target.value)} options={['KB', 'MB']} />
+      </div>
+      <div className="chip-group">
+        {[10, 20, 50, 100, 200, 500, 1000].map(size => {
+          const selected = targetOn && target * (sizeUnit === 'MB' ? 1000 : 1) === size;
+          return (
+            <button
+              type="button"
+              key={size}
+              className={selected ? 'chip active' : 'chip'}
+              aria-pressed={selected}
+              onClick={() => {
+                setTargetOn(true);
+                setTarget(size === 1000 ? 1 : size);
+                setSizeUnit(size === 1000 ? 'MB' : 'KB');
+              }}
+            >
+              {size === 1000 ? '1 MB' : size + ' KB'}
+            </button>
+          );
+        })}
+      </div>
+      <p className="help-text" style={{ marginBottom: 16 }}>
+        {slug === 'image-dimensions-size' ? 'The output keeps your chosen dimensions.' : 'The tool may reduce dimensions to reach the target.'}
+      </p>
+    </>}
     {isResize&&<><SelectField label="Resize by" value={units} onChange={e=>{setUnits(e.target.value);if(e.target.value==='cm'){setWidth(3.5);setHeight(4.5);setLocked(false);}else if(e.target.value==='px'){setWidth(original.width);setHeight(original.height);}}} options={[['px','Pixels'],['percent','Percentage'],['cm','Centimeters & DPI']]}/>
       {units==='percent'?<NumberField label="Scale (%)" min={1} max={1000} value={percent} onChange={e=>setPercent(Number(e.target.value))}/>:<><div className="field-row"><NumberField label={'Width ('+units+')'} min={.01} step="any" value={width} onChange={e=>changeWidth(Number(e.target.value))}/><NumberField label={'Height ('+units+')'} min={.01} step="any" value={height} onChange={e=>changeHeight(Number(e.target.value))}/></div><Checkbox label="Lock aspect ratio" checked={locked} onChange={e=>setLocked(e.target.checked)}/></>}
       {units==='cm'&&<NumberField label="DPI for pixel calculation" min={1} max={1200} value={dpi} onChange={e=>setDpi(Number(e.target.value))} help={'Output: '+Math.round(width/2.54*dpi)+' × '+Math.round(height/2.54*dpi)+' pixels. DPI calculates pixels; print settings control physical size.'}/>}

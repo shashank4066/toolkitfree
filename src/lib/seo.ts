@@ -6,45 +6,45 @@ export function toolFaq(tool: Tool) {
     'image-target-size': [
       {
         question: 'Can I compress an image to exact file sizes like 10 KB, 20 KB or 50 KB?',
-        answer: 'Yes! ToolKitFree iteratively optimizes image quality and pixel dimensions client-side to bring your file strictly under 10 KB, 20 KB, 50 KB, 100 KB, or any custom target size you specify. This is ideal for job portals, government exams, and passport or visa applications where file limits are strict.'
+        answer: 'Enter a size in KB or MB. The tool adjusts quality and pixel dimensions to try to stay at or below the target. If it cannot reach the target, it shows the smallest output it found.'
       },
       {
         question: 'How do I compress an image to 10 KB online for free?',
-        answer: 'Upload your JPG, PNG or WebP file to the workspace, select or enter 10 KB as the target file size, and click Compress. The browser will automatically scale and compress the image to be under 10 KB while preserving as much detail as possible.'
+        answer: 'Choose a JPG, PNG, or WebP file, set the target to 10 KB, and run the tool. Check the size and preview before downloading.'
       },
       {
         question: 'Will my image be watermarked or uploaded anywhere?',
-        answer: 'No. All processing happens entirely inside your browser on your device. Your photos are never uploaded to any server, and no watermark is ever added.'
+        answer: 'Your browser processes the photo on your device. The website adds no watermark.'
       }
     ],
     'pdf-merge': [
       {
         question: 'How do I merge multiple PDF files online for free?',
-        answer: 'Select or drag and drop two or more PDF files into the workspace, drag to rearrange them in your desired order, and click "Merge PDF". Your merged file is ready to download in seconds.'
+        answer: 'Add at least two PDFs. Drag them into order or use the arrow buttons, then select Merge PDF and download the result.'
       },
       {
         question: 'Is there a limit on how many PDFs I can combine?',
-        answer: 'No! There is no daily limit, no page limit, and no fee. Because merging happens locally on your computer or phone using WebAssembly, you can combine as many files as your device memory allows.'
+        answer: 'Your device memory determines how many PDFs you can merge at once. If a large batch fails, try merging fewer files at a time.'
       },
       {
         question: 'Are my private PDF documents secure?',
-        answer: '100% secure. ToolKitFree processes files entirely in your browser. Unlike traditional PDF converter websites, your documents are never uploaded to the cloud or third-party servers.'
+        answer: 'Your browser merges the PDFs on your device. The website does not upload your documents.'
       }
     ],
     'image-dimensions-size': [
       {
         question: 'How do I resize an image to 20 KB and specific dimensions (e.g. 3.5cm x 4.5cm)?',
-        answer: 'Choose whether you want to resize by centimeters (with custom DPI) or pixels, enter your target dimensions (such as 3.5cm x 4.5cm for passport photos), enter 20 KB as your target file size, and click process. The tool generates an image that meets both constraints.'
+        answer: 'Set the dimensions, enable the file size target, and enter 20 KB. The tool keeps the dimensions fixed and tells you if the smallest output still exceeds the target.'
       },
       {
         question: 'What DPI should I use for government and passport photos?',
-        answer: '300 DPI is the standard requirement for print and official passport/visa submissions. At 3.5cm x 4.5cm and 300 DPI, your output will be approximately 413 x 531 pixels.'
+        answer: 'Use the dimensions and DPI specified on your form. For example, 3.5 × 4.5 cm at 300 DPI comes to about 413 × 531 pixels.'
       }
     ],
     'image-compressor': [
       {
         question: 'How do I compress an image without losing visible quality?',
-        answer: 'Adjust the quality slider (80-85% is the sweet spot that reduces 60-80% of file size with no perceptible difference in visual clarity), or check "Compress to a target size" to reach an exact file size.'
+        answer: 'Start with a higher quality setting and compare the previews. The size and detail you keep depend on the source image and output format.'
       }
     ]
   };
@@ -52,7 +52,7 @@ export function toolFaq(tool: Tool) {
   const custom = specificFaqs[tool.slug] || [
     {
       question: 'How do I use ' + tool.name + '?',
-      answer: tool.description + ' Open the workspace, add your input, choose your settings, and download or copy the result. Everything runs private and fast right in your browser.'
+      answer: 'Add your input, choose your settings, then download or copy the result.'
     }
   ];
 
@@ -80,8 +80,8 @@ export function metadata(path: string) {
     : (names[path] || 'Page Not Found') + ' | ' + site.name;
 
   const description = tool
-    ? tool.description + ' 100% free, fast, private, and easy to use. No signup, no limits, no watermark. Process files locally in your browser.'
-    : 'Free PDF, image, text and developer tools. Fast, private, and easy to use. No signup, no watermark. Files stay on your device.';
+    ? tool.description + ' Free to use in your browser. No signup or uploads.'
+    : 'Free tools for PDFs, images, text, and code. Merge files, resize photos, format JSON, and more. Your browser processes files on your device.';
 
   const keywords = tool
     ? tool.keywords.join(', ') + ', free online tools, ' + site.name

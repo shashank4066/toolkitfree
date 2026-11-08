@@ -7,6 +7,8 @@ import { Icon } from './Icon';
 export function SearchBar() {
   const [query, setQuery] = useState(''), [open, setOpen] = useState(false), [active, setActive] = useState(-1);
   const id = useId(), navigate = useNavigate(), results = searchTools(query).slice(0, 7);
+  const showResults = open && Boolean(query.trim());
+  const listOpen = showResults && results.length > 0;
 
   const choose = (slug: string) => {
     setOpen(false);
@@ -38,32 +40,37 @@ export function SearchBar() {
 
   return <div className="search-wrap" onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false); }}>
     <form className="hero-search" onSubmit={handleSubmit}>
-      <Search size={23}/>
+      <Search size={20} aria-hidden="true" />
       <input
         aria-label="Search tools"
         role="combobox"
-        aria-expanded={open && !!query}
-        aria-controls={id}
+        aria-expanded={listOpen}
+        aria-controls={listOpen ? id : undefined}
         aria-autocomplete="list"
-        aria-activedescendant={active >= 0 ? id + '-' + active : undefined}
+        aria-activedescendant={listOpen && results[active] ? id + '-' + active : undefined}
         value={query}
-        placeholder="Search tools… e.g. compress image to 10kb, merge PDF"
+        placeholder="Search by task, e.g. merge PDF"
         onFocus={() => setOpen(true)}
         onChange={e => { setQuery(e.target.value); setOpen(true); setActive(-1); }}
         onKeyDown={e => {
-          if (e.key === 'Escape') setOpen(false);
-          if (e.key === 'ArrowDown') { e.preventDefault(); setActive(Math.min(results.length - 1, active + 1)); }
-          if (e.key === 'ArrowUp') { e.preventDefault(); setActive(Math.max(0, active - 1)); }
+          if (e.key === 'Escape') { setOpen(false); setActive(-1); }
+          if (!query.trim() || !results.length) return;
+          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            setOpen(true);
+            setActive(e.key === 'ArrowDown' ? Math.min(results.length - 1, active + 1) : Math.max(0, active - 1));
+          }
         }}
       />
-      <button aria-label="Find tools" type="submit"><ArrowRight size={21}/></button>
+      <button aria-label="Find tools" type="submit"><ArrowRight size={19} aria-hidden="true" /></button>
     </form>
-    {open && query && (
+    {listOpen && (
       <div className="search-results" id={id} role="listbox" aria-label="Matching tools">
-        {results.length ? results.map((tool, i) => (
+        {results.map((tool, i) => (
           <button
             id={id + '-' + i}
             role="option"
+            tabIndex={-1}
             aria-selected={active === i}
             className={'search-result category-' + tool.category + (active === i ? ' selected' : '')}
             key={tool.slug}
@@ -76,8 +83,9 @@ export function SearchBar() {
             </span>
             <CornerDownLeft size={16}/>
           </button>
-        )) : <p className="empty">No tools found. Try “PDF”, “resize” or “compress”.</p>}
+        ))}
       </div>
     )}
+    {showResults && !results.length && <p role="status" className="search-results empty">No matching tools. Try a shorter search.</p>}
   </div>;
 }

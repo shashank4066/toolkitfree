@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { Upload, ShieldCheck, Plus } from 'lucide-react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
+import { ShieldCheck, Plus, Upload } from 'lucide-react';
 import { Button } from './ui/button';
 
 export function UploadZone({
@@ -56,27 +56,20 @@ export function UploadZone({
     if (valid.length) onFiles(multiple ? valid : valid.slice(0, 1));
   }
 
-  useEffect(() => {
-    function handleGlobalPaste(e: ClipboardEvent) {
-      if (disabled) return;
-      const target = e.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.isContentEditable)
-      ) {
-        return;
-      }
-      if (e.clipboardData && e.clipboardData.files.length > 0) {
-        e.preventDefault();
-        receive(Array.from(e.clipboardData.files));
-      }
-    }
+  const handlePaste = useEffectEvent((event: ClipboardEvent) => {
+    if (disabled || event.defaultPrevented || !event.clipboardData?.files.length) return;
+    const target = event.target;
+    if (target instanceof HTMLElement && (target.matches('input, textarea, select') || target.isContentEditable)) return;
+    event.preventDefault();
+    receive(Array.from(event.clipboardData.files));
+  });
 
+  useEffect(() => {
+    // One listener handles both focused and page-wide paste with current files.
+    const handleGlobalPaste = (event: ClipboardEvent) => handlePaste(event);
     window.addEventListener('paste', handleGlobalPaste);
     return () => window.removeEventListener('paste', handleGlobalPaste);
-  }, [disabled, accept, multiple, maxFiles]);
+  }, []);
 
   return (
     <>
@@ -88,7 +81,7 @@ export function UploadZone({
         }
         tabIndex={disabled ? -1 : 0}
         role="group"
-        aria-label="File upload. You can also paste a file here with Ctrl+V."
+        aria-label="File upload"
         onKeyDown={(e) => {
           if (
             e.target === e.currentTarget &&
@@ -98,13 +91,8 @@ export function UploadZone({
             ref.current?.click();
           }
         }}
-        onPaste={(e) => {
-          if (e.clipboardData.files.length) {
-            e.preventDefault();
-            receive(Array.from(e.clipboardData.files));
-          }
-        }}
         onDragEnter={(e) => {
+          if (disabled || !e.dataTransfer.types.includes('Files')) return;
           e.preventDefault();
           depth.current++;
           setDrag(true);
@@ -112,7 +100,7 @@ export function UploadZone({
         onDragOver={(e) => e.preventDefault()}
         onDragLeave={(e) => {
           e.preventDefault();
-          depth.current--;
+          depth.current = Math.max(0, depth.current - 1);
           if (depth.current <= 0) setDrag(false);
         }}
         onDrop={(e) => {
@@ -125,15 +113,10 @@ export function UploadZone({
         <div className="upload-icon">
           <Upload size={26} />
         </div>
-        <h3>Drop your files here</h3>
-        <p>
-          {compact
-            ? 'Add more files to your workspace'
-            : 'or choose them from your device'}
-        </p>
+        <h3>{multiple ? 'Drop files here' : 'Drop a file here'}</h3>
         <Button disabled={disabled} onClick={() => ref.current?.click()}>
-          {compact ? <Plus size={16} /> : <Upload size={16} />}
-          Choose {multiple ? 'files' : 'file'}
+          {compact && <Plus size={16} aria-hidden="true" />}
+          {compact ? (multiple ? 'Add files' : 'Replace file') : (multiple ? 'Choose files' : 'Choose file')}
         </Button>
         <input
           ref={ref}
@@ -148,11 +131,8 @@ export function UploadZone({
             e.target.value = '';
           }}
         />
-        <small>
-          {label}
-          {maxFiles ? ' · Up to ' + maxFiles + ' per batch' : ''} · Paste anywhere
-          with Ctrl+V
-        </small>
+        <small>{label}{maxFiles && maxFiles > 1 ? ' · Up to ' + maxFiles + ' per batch' : ''}</small>
+        {!compact && <p className="upload-paste">You can also paste a file from your clipboard.</p>}
       </div>
       <p className="privacy-note">
         <ShieldCheck />

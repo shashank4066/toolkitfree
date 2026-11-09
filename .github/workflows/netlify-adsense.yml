@@ -1,0 +1,218 @@
+name: Publish ToolKitFree AdSense meta tag
+
+on:
+  push:
+    branches: [codex/netlify-adsense-2bd2a96]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.repository == 'shashank4066/toolkitfree' && github.event.before == '2bd2a961791ed3667f4b1718511226626a84f2a0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 17
+    env:
+      SITE_URL: https://toolkitfree.online
+      SITE_NAME: magical-gumdrop-c80d32
+      NETLIFY_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Check out the tested update
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 2bd2a961791ed3667f4b1718511226626a84f2a0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+
+      - name: Build the production site
+        env:
+          VITE_SITE_URL: https://toolkitfree.online
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+          node --input-type=module <<'NODE'
+          import { readFileSync, readdirSync } from 'node:fs';
+          const marker = 'name="google-adsense-account" content="ca-pub-5183659278489032"';
+          const pages = readdirSync('dist', { recursive: true }).filter(file => file.endsWith('.html'));
+          if (pages.length < 2) throw Error('The production pages were not generated.');
+          for (const file of pages) {
+            const head = readFileSync('dist/' + file, 'utf8').match(/<head\b[^>]*>([\s\S]*?)<\/head>/i)?.[1];
+            if (head?.split(marker).length !== 2) throw Error('Missing or duplicate AdSense meta tag in ' + file);
+          }
+          console.log('ADSENSE_BUILD_VERIFIED=' + pages.length);
+          NODE
+
+      - name: Prepare one-time Netlify authorization
+        id: auth
+        env:
+          AUTH_PUBLIC_KEY: MCowBQYDK2VuAyEATsvgmQdVZiVLu0U5vRmiFxllQjzS1dKAbrKyEaISeBc=
+          XDG_CONFIG_HOME: ${{ runner.temp }}/toolkitfree-netlify-config
+        run: |
+          npm install --prefix "$RUNNER_TEMP/toolkitfree-netlify-cli" --no-audit --no-fund netlify-cli@27.16.2
+          node --input-type=module <<'NODE'
+          import { createCipheriv, createPublicKey, diffieHellman, generateKeyPairSync, hkdfSync, randomBytes } from 'node:crypto';
+          import { appendFileSync, writeFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          import { spawnSync } from 'node:child_process';
+
+          async function tagOn(path) {
+            try {
+              const response = await fetch(process.env.SITE_URL + path + '?adsense-check=' + process.env.GITHUB_SHA, {
+                signal: AbortSignal.timeout(9000),
+              });
+              const html = response.ok ? await response.text() : '';
+              const head = html.match(/<head\b[^>]*>([\s\S]*?)<\/head>/i)?.[1];
+              return head?.split('name="google-adsense-account" content="ca-pub-5183659278489032"').length === 2;
+            } catch { return false; }
+          }
+          if ((await Promise.all([tagOn('/'), tagOn('/pdf-merge')])).every(Boolean)) {
+            console.log('ADSENSE_ALREADY_LIVE=true');
+            process.exit(0);
+          }
+
+          const cli = join(process.env.RUNNER_TEMP, 'toolkitfree-netlify-cli/node_modules/.bin/netlify');
+          const result = spawnSync(cli, ['login', '--request', 'Publish the Google AdSense verification meta tag on toolkitfree.online', '--json'], {
+            encoding: 'utf8', timeout: 30000, maxBuffer: 4 * 1024 * 1024,
+          });
+          if (result.status !== 0) throw Error('Netlify could not create an authorization request.');
+          const output = result.stdout.trim();
+          const jsonStart = output.lastIndexOf('\n{') + 1;
+          const ticket = JSON.parse(output.slice(jsonStart));
+          const url = new URL(ticket.url);
+          if (url.origin !== 'https://app.netlify.com' || url.pathname !== '/authorize' ||
+              url.searchParams.get('response_type') !== 'ticket' || url.searchParams.get('ticket') !== ticket.ticket_id ||
+              !/^[A-Za-z0-9_-]{16,100}$/.test(ticket.ticket_id)) {
+            throw Error('Netlify returned an unexpected authorization request.');
+          }
+
+          const receiver = createPublicKey({ key: Buffer.from(process.env.AUTH_PUBLIC_KEY, 'base64'), format: 'der', type: 'spki' });
+          const sender = generateKeyPairSync('x25519');
+          const secret = diffieHellman({ privateKey: sender.privateKey, publicKey: receiver });
+          const key = Buffer.from(hkdfSync('sha256', secret, Buffer.alloc(0), 'toolkitfree-netlify-auth-v1', 32));
+          const iv = randomBytes(12);
+          const cipher = createCipheriv('aes-256-gcm', key, iv);
+          const sealed = Buffer.concat([
+            sender.publicKey.export({ format: 'der', type: 'spki' }), iv,
+            Buffer.concat([cipher.update(ticket.ticket_id, 'utf8'), cipher.final()]), cipher.getAuthTag(),
+          ]).toString('base64url');
+
+          // The repository can see only ciphertext. The ticket stays in this runner.
+          const name = 'netlify-adsense-auth-' + sealed;
+          writeFileSync(join(process.env.RUNNER_TEMP, 'toolkitfree-netlify-ticket'), ticket.ticket_id, { mode: 0o600 });
+          writeFileSync(join(process.env.RUNNER_TEMP, 'toolkitfree-netlify-ready.txt'), 'The verified build is ready for account authorization.\n');
+          appendFileSync(process.env.GITHUB_OUTPUT, 'artifact_name=' + name + '\n');
+          NODE
+
+      - name: Make the encrypted authorization request available
+        if: steps.auth.outputs.artifact_name != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.auth.outputs.artifact_name }}
+          path: ${{ runner.temp }}/toolkitfree-netlify-ready.txt
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Wait for approval, publish, and verify the meta tag
+        if: steps.auth.outputs.artifact_name != ''
+        env:
+          XDG_CONFIG_HOME: ${{ runner.temp }}/toolkitfree-netlify-config
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, unlinkSync } from 'node:fs';
+          import { join } from 'node:path';
+          import { spawnSync } from 'node:child_process';
+
+          const siteName = process.env.SITE_NAME;
+          const domain = 'toolkitfree.online';
+          const cli = join(process.env.RUNNER_TEMP, 'toolkitfree-netlify-cli/node_modules/.bin/netlify');
+          const ticketFile = join(process.env.RUNNER_TEMP, 'toolkitfree-netlify-ticket');
+          const ticket = readFileSync(ticketFile, 'utf8').trim();
+          const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+          function run(args, timeout = 30000) {
+            return spawnSync(cli, args, { encoding: 'utf8', timeout, maxBuffer: 8 * 1024 * 1024 });
+          }
+
+          function parseOutput(stdout) {
+            const output = stdout.trim();
+            const starts = [...output.matchAll(/(?:^|\n)(?=[{\[])/g)].map(match => match.index + match[0].length);
+            for (const start of starts.reverse()) {
+              try { return JSON.parse(output.slice(start)); } catch {}
+            }
+          }
+
+          function command(args, label, timeout) {
+            const result = run(args, timeout);
+            if (result.status === 0) {
+              const response = parseOutput(result.stdout);
+              if (response !== undefined) return response;
+              throw Error(label + ' did not return JSON.');
+            }
+            const message = result.stderr + '\n' + result.stdout;
+            if (/already (?:in use|assigned|registered)|another (?:site|project|account)/i.test(message)) {
+              throw Error(label + ' failed because Netlify says the domain is assigned elsewhere.');
+            }
+            if (/verify.*domain|domain.*verifi|domain ownership/i.test(message)) {
+              throw Error(label + ' requires domain ownership verification in Netlify.');
+            }
+            const status = message.match(/\b(400|401|403|404|409|422|429|500|502|503)\b/)?.[1];
+            throw Error(label + ' failed' + (status ? ' (HTTP ' + status + ')' : '') + '.');
+          }
+
+          function api(method, data) {
+            return command(['api', method, '--data', JSON.stringify(data)], 'Netlify ' + method);
+          }
+
+          async function tagOn(path) {
+            try {
+              const response = await fetch(process.env.SITE_URL + path + '?adsense-check=' + process.env.GITHUB_SHA, {
+                signal: AbortSignal.timeout(9000),
+              });
+              const html = response.ok ? await response.text() : '';
+              const head = html.match(/<head\b[^>]*>([\s\S]*?)<\/head>/i)?.[1];
+              return head?.split('name="google-adsense-account" content="ca-pub-5183659278489032"').length === 2;
+            } catch { return false; }
+          }
+
+          try {
+            const deadline = Date.now() + 8 * 60 * 1000;
+            let authorized = false;
+            while (Date.now() < deadline) {
+              const check = run(['login', '--check', ticket, '--json']);
+              const result = check.status === 0 ? parseOutput(check.stdout) : undefined;
+              if (result?.status === 'authorized') { authorized = true; break; }
+              if (result?.status === 'denied') throw Error('Netlify declined or expired the authorization request.');
+              await pause(10000);
+            }
+            if (!authorized) throw Error('Netlify approval was not received within the authorization window.');
+
+            const projects = api('listSites', { name: siteName, per_page: 100 });
+            const site = Array.isArray(projects) && projects.find(project => project.name === siteName);
+            if (!site || site.custom_domain !== domain || !/^[a-f0-9-]{36}$/i.test(site.id)) throw Error('The authorized account could not access the existing ToolKitFree project.');
+            const siteId = site.id;
+
+            const deployment = command([
+              'deploy', '--prod', '--no-build', '--dir=dist', '--site', siteId, '--json', '--timeout=180',
+            ], 'Netlify production deployment', 230000);
+            const published = api('getSite', { site_id: siteId });
+            if (!deployment.deploy_id || published.published_deploy?.id !== deployment.deploy_id) {
+              throw Error('Netlify did not confirm the tested build as the active production deployment.');
+            }
+            console.log('ADSENSE_BUILD_PUBLISHED=true');
+            for (let attempt = 0; attempt < 6; attempt++) {
+              const [home, tool] = await Promise.all([tagOn('/'), tagOn('/pdf-merge')]);
+              if (home && tool) {
+                console.log('ADSENSE_LIVE_VERIFIED=true');
+                break;
+              }
+              if (attempt === 5) throw Error('The AdSense meta tag was not visible at the public domain after deployment.');
+              await pause(5500);
+            }
+          } finally {
+            unlinkSync(ticketFile);
+          }
+          NODE

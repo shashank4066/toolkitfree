@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   deploy:
-    if: github.repository == 'shashank4066/toolkitfree' && github.event.before == '2bd2a961791ed3667f4b1718511226626a84f2a0'
+    if: github.repository == 'shashank4066/toolkitfree' && github.event.before == 'e8d2a99f13b3e6332049478ad17b3ab690737d93'
     runs-on: ubuntu-latest
     timeout-minutes: 17
     env:
@@ -37,7 +37,7 @@ jobs:
           node --input-type=module <<'NODE'
           import { readFileSync, readdirSync } from 'node:fs';
           const marker = 'name="google-adsense-account" content="ca-pub-5183659278489032"';
-          const pages = readdirSync('dist', { recursive: true }).filter(file => file.endsWith('.html'));
+          const pages = readdirSync('dist', { recursive: true }).filter(file => file === '404.html' || file.split('/').at(-1) === 'index.html');
           if (pages.length < 2) throw Error('The production pages were not generated.');
           for (const file of pages) {
             const head = readFileSync('dist/' + file, 'utf8').match(/<head\b[^>]*>([\s\S]*?)<\/head>/i)?.[1];
